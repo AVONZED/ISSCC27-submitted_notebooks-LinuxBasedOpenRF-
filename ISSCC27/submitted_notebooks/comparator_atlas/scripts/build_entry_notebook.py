@@ -1308,6 +1308,43 @@ def main(support_digest: str | None = None) -> None:
         display(ext.fix_mc_table(extension))
         """),
         markdown("""
+        **One more bit with the equalizer (r25).** The shipped core gets a
+        fifth binary trim bit (codes ±31) and the r24c equalizer; nothing
+        else moves. *Trim length.* A longer trim device looks like a free
+        finer step, but the first table shows it is not: the trim adds gm
+        (∝ W/L) and capacitance on the x node (∝ W·L) in opposite
+        directions, and their null moves with PVT. At L ≥ 1.25 µm the hot
+        corners' trim folds back and then reverses polarity (end-point LSB
+        −0.08 mV at SF for L 1.25, +0.96 mV for L 1.5) while TT still
+        trims normally, so L = 1 µm is the longest usable length. Its
+        63-code transfer at the hot corners has two small carry reversals
+        (max |DNL| 2.2 LSB) but no fold-back. *Monte Carlo.* In the paired
+        mismatch Monte Carlo (second table; the same seeds draw the same
+        core and 4b trim devices as r22 and r3, the fifth bit draws its own)
+        the narrowest of the 45 half ranges is 43.9 mV (median 67.1), every
+        seed is covered at both hot corners, the two ~3σ seeds trim to
+        within 0.82 mV, ±3 mV at 1 ns is 80/80 at all three conditions, and
+        ±1 mV returns to the shipped design's level (68/80 at SF, 71/80 at
+        FF, 70/80 at TT). It does not go further: every ±1 mV miss is a
+        wrong decision of a covered seed, the hot-corner step is about
+        2 mV, and the shipped 4b trim at TT, with every seed covered, also
+        scores 70/80. All seeds at ±1 mV needs a step near 1 mV, not more
+        range. *Cost.* The 5b trim with equalizer takes 460 fJ per TT
+        comparison at code 0 against 296 fJ for the equalized 4b trim
+        (+55%), and the gate-area proxy rises from 20.6 to 38.8 µm²; the
+        decision memory stays at the bisection floor (−1.0 µV; 24.0 µV
+        without the equalizer).
+        """),
+        code("""
+        display(ext.trim_length_table(extension))
+        r25 = ext.trim5_mc_table(extension)
+        display(r25)
+        e4, e5 = r25.attrs["energy_fj"]
+        a4, a5 = r25.attrs["area_um2"]
+        print(f"TT energy, code 0: 4b+eq {e4:.0f} fJ, 5b+eq {e5:.0f} fJ")
+        print(f"gate-area proxy: 4b {a4:.2f} um^2, 5b {a5:.2f} um^2")
+        """),
+        markdown("""
         **Limits.** Only Vth mismatch is modelled, and |*m*| is found by
         bisection to 0.2 mV; 40 seeds per condition are not a yield estimate.
         The cost paragraph above refers to the r13 fix. The 6-bit designs have
@@ -1335,6 +1372,9 @@ def main(support_digest: str | None = None) -> None:
         no layout, mismatch or noise of their own in the ISF; the 6-bit
         designs get only a spot check at three conditions, and the paired
         fix Monte Carlo covers the selected design at its two hot corners.
+        The r25 5-bit trim is likewise schematic only; its length screen is
+        three conditions, its full transfer five, and its Monte Carlo the
+        two hot corners and TT.
         """),
         markdown("""
         ## 10. Discussion and limitations
@@ -1353,6 +1393,9 @@ def main(support_digest: str | None = None) -> None:
         (0.35–1.21 mV); its r24c follow-up traces a 7.5 µV decision memory
         to floating trim nodes and removes it with one equalizing switch per
         bit at 3% energy, which does not, however, recover the two ~3σ seeds.
+        Its r25 5-bit trim with the equalizer does cover them (all 40 seeds
+        at both hot corners, ±3 mV 80/80) at 55% more energy, with ±1 mV
+        about unchanged (68/80 and 71/80).
 
         Under the same local calibration policy, the selected circuit
         increases 1 ns correct decisions from 310/392 to 372/392 across

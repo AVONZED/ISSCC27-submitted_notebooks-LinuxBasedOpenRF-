@@ -17,7 +17,7 @@ from entry_tools import artifact_path, digest, verify_files
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "results" / "research"
-MANIFEST_SHA256 = "96772bff1205e37ea7881b0bc67c205c4feb84d27f4efb338ad801e3016d6afe"
+MANIFEST_SHA256 = "fca87c04084ba5bbe66504ab1890efe282130585ea3ee976452482bde053a08b"
 ATLAS_DESIGNS = ("baseline", "lvt_base_3b", "lvt_balanced_4b")
 PROSPECTIVE_DESIGNS = ("svt_fast_4b", "lvt_fine_3b", "lvt_fine_4b", "lvt_fast_4b", "lvt_fast_fine_4b", "lvt_wide_5b")
 FIX = "fix_x2_unit5b"
@@ -600,6 +600,83 @@ def fix_mc_table(data: dict) -> pd.DataFrame:
     table = pd.DataFrame(rows).set_index(["condition", "variant"])
     table.attrs.update(narrowest=(min(r22_range.values()), min(fix_range.values())),
                        below_25=(sum(v < 25 for v in r22_range.values()), sum(v < 25 for v in fix_range.values())))
+    return table
+
+
+TRIM5 = "eq5_l100"
+TRIM5_LABEL = "5b + equalize (r25)"
+
+
+def _gate_area_um2(trim_bits: int) -> float:
+    """Gate-area proxy (comparator_atlas.designs; equalizer switches not counted) of the shipped core."""
+    from dataclasses import replace
+
+    from comparator_atlas.designs import DESIGNS
+    return replace(DESIGNS["lvt_balanced_4b"], trim_bits=trim_bits).gate_area_um2
+
+
+def trim_length_table(data: dict) -> pd.DataFrame:
+    """r25: the shipped core with a 5-bit binary trim and the equalizer, against trim device length L.
+    Nominal end-point half range and end-point LSB (code +-31), and the full 63-code transfer at the two hot
+    corners where it was run."""
+    screen = {}
+    for r in _jsonl(data, "r25/screen.jsonl"):
+        screen.setdefault(r["trim_l"], {})[r["cond"][0]] = r
+    transfer = {}
+    for n in data["files"]:
+        if Path(n).match("r25/dnl_*.json"):
+            for r in _json(n):
+                transfer.setdefault(r["design"], {})[r["cond"][0]] = r
+    rows = []
+    for length, c in sorted(screen.items()):
+        if set(c) != {"tt", "sf", "ff"}:
+            raise RuntimeError(f"r25 screen at L {length}: expected TT, SF and FF")
+        t = transfer.get(c["tt"]["design"])
+        rows.append({"trim L (um)": length,
+                     "half range TT / SF / FF (mV)": " / ".join(f"{c[k]['half_range_mv']:.1f}" for k in ("tt", "sf", "ff")),
+                     "end-point LSB TT / SF / FF (mV)": " / ".join(f"{c[k]['lsb_mv']:+.2f}" for k in ("tt", "sf", "ff")),
+                     "63 codes at SF / FF hot: monotonic, max |DNL| (LSB)": "-" if t is None else " / ".join(
+                         f"{'yes' if t[k]['monotonic'] else 'no'}, {t[k]['dnl_max_lsb']:.1f}" for k in ("sf", "ff"))})
+    return pd.DataFrame(rows).set_index("trim L (um)")
+
+
+def trim5_mc_table(data: dict) -> pd.DataFrame:
+    """r25: paired mismatch Monte Carlo (same seeds; the core and the 4b-named trim devices keep their r22/r3 draw)
+    of the shipped 4b trim, the equalized 4b trim and the equalized 5b trim (L 1), with the nominal half range at
+    each condition. attrs: energy per comparison at TT (VDD plus clock edge, code 0), gate-area proxy, memory."""
+    r22_range = {tuple(r["cond"]): r["half_range_mv"] for r in _jsonl(data, "r22/range.jsonl")
+                 if r["design"] == "lvt_balanced_4b"}
+    fix_range = {tuple(r["cond"]): r["half_range_mv"] for r in _json("r24/fixrange_lvt_balanced_4b.json")}
+    r25_range = {tuple(r["cond"]): r["half_range_mv"] for r in _json(f"r25/range_{TRIM5}.json")}
+    if len(r25_range) != 45 or set(r25_range) != set(r22_range):
+        raise RuntimeError("r25: expected the 45 r22 range conditions")
+    benches = []
+    for corner in ("sf", "ff"):
+        tag = f"{corner}1.95V125C"
+        benches += [(f"{corner.upper()} 1.95 V 125 C", (corner, 1.95, 125.0), label, pattern, half) for label, pattern, half in (
+            ("4b as built (r22)", f"r22/mc_{tag}_lvt_balanced_4b_*.jsonl", r22_range),
+            ("4b + equalize (r24c)", f"r24/fixmc_{tag}_lvt_balanced_4b.jsonl", fix_range),
+            (TRIM5_LABEL, f"r25/mc_{tag}_{TRIM5}.jsonl", r25_range))]
+    benches += [("TT 1.8 V 27 C", ("tt", 1.8, 27.0), "4b as built (r3)", "r3/mc_lvt_balanced_4b_*.jsonl", r22_range),
+                ("TT 1.8 V 27 C", ("tt", 1.8, 27.0), TRIM5_LABEL, f"r25/mc_tt1.8V27C_{TRIM5}.jsonl", r25_range)]
+    rows = []
+    for cond, key, label, pattern, half in benches:
+        recs = [r for r in _jsonl(data, pattern) if r["seed"] < 40]
+        by_seed = {r["seed"]: r for r in recs}
+        row = {"condition": cond, "variant": label, "nominal half range (mV)": round(half[key], 1),
+               **_mc_summary(recs, 40)}
+        row["|m| rms (mV)"] = round(math.sqrt(np.mean([r["m_mv"] ** 2 for r in recs if r["covered"]])), 2)
+        row["seeds 3 / 13: m (mV)"] = " / ".join(
+            f"{by_seed[s]['m_mv']:+.2f}" + ("" if by_seed[s]["covered"] else " (out of range)") for s in (3, 13))
+        rows.append(row)
+    table = pd.DataFrame(rows).set_index(["condition", "variant"])
+    e4 = _json("r24/memory_energy_lvt_balanced_4b.json")
+    e5 = _json(f"r25/memory_energy_{TRIM5}.json")
+    mem = _json(f"r25/memory_{TRIM5}.json")
+    fj = {k: e[f"equalize {c}"]["vdd_fj"] + e[f"equalize {c}"]["clk_fj"] for k, e, c in (("4b", e4, 0), ("5b", e5, 0))}
+    table.attrs.update(energy_fj=(fj["4b"], fj["5b"]), area_um2=(_gate_area_um2(4), _gate_area_um2(5)),
+                       memory_uv={v: m["decision_uv"] for v, m in mem.items()},
+                       narrowest=min(r25_range.values()), median=float(np.median(list(r25_range.values()))))
     return table
 
 

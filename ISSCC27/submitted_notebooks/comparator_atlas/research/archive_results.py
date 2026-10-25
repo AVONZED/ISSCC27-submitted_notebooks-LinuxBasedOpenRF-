@@ -52,6 +52,8 @@ STUDIES = {
     "r24": ["r24/r24_report.json", "r24/atlas_pinned_*.jsonl", "r24/isf_*.jsonl", "r24/sym_*.jsonl",
             "r24/memory_*.json", "r24/trim_steps_swap.json", "r24/gain_law.json", "r24/fixmc_*.jsonl",
             "r24/fixrange_*.json"],
+    "r25": ["r25/screen.jsonl", "r25/dnl_*.json", "r25/range_*.json", "r25/mc_*.jsonl", "r25/memory_*.json",
+            "r25/r25_report.json"],
 }
 
 

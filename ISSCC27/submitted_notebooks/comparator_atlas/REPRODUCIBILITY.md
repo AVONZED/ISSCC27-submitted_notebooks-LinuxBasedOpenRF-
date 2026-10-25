@@ -610,7 +610,7 @@ not part of the sealed decision record of Sections 1-8; nothing in the
 specification map, the 49-condition data or the layout example is changed.
 
 **Saved results.** `results/research/` holds the archived outputs of studies
-r1-r24 (JSON, JSONL and CSV, LF line endings).
+r1-r25 (JSON, JSONL and CSV, LF line endings).
 `results/research/manifest.json` lists the SHA256 of every archived file and
 of every `research/*.py` script. `presentation/research_extension.py` pins the
 manifest's own SHA256 and refuses to draw Section 9 if the manifest, any
@@ -643,6 +643,7 @@ command line.
 | r22 | `r22_range_mc.py` | Nominal trim range of the three sealed designs on the 45 r20 conditions, and paired mismatch MC (40 seeds, as r3) of the selected design at SF and FF 1.95 V 125 C and of `lvt_base_3b` at SF 1.95 V 125 C |
 | r23 | `r23_noise.py` | Transient thermal (white BSIM4) noise: input-referred noise of five designs at TT and of the selected design at SS 1.62 V -40 C and SF 1.95 V 125 C (40 paired realizations each), its split by device group, and the error rate it gives the r3/r16/r19/r22 MC residuals |
 | r24 | `r24_isf.py`, `r24_scaling.py`, `r24_probe.py`, `r24_fixmc.py` | Measured impulse sensitivity (ISF) of the decision: noise predicted from the noiseless trajectory and checked per realization against r23 MC (nine benches), the selected design's noise at the 45 PVT conditions, decision memory of off trim branches and a layout-free fix, the closed-form integration-phase law with an input-common-mode prediction, the gain-suppression law for latch and reset noise, a causal probe of the memory and the equalize fix requalified over PVT, energy and paired mismatch MC |
+| r25 | `r25_trim5.py`, `r25_cost.py`, `r25_report.py` | 5-bit trim with the equalizer on the shipped core: trim-length screen (gm/capacitance polarity reversal at the hot corners for L >= 1.25 um), 63-code transfer, 45-condition range, paired mismatch MC at SF/FF 1.95 V 125 C and TT, energy and memory |
 
 **Re-running.** Live studies use the same project-local ngspice 47 and pinned
 SKY130 models as the full campaign (`node scripts/setup.mjs` on Windows;
@@ -731,4 +732,13 @@ range with the equalizer added (`fixmc_*.jsonl`, `fixrange_*.json`). The added
 devices are nominal (no mismatch, no noise in the ISF) and have no layout.
 The trajectories and per-condition ISF scans are not archived;
 `r24_report.json` and the r24c JSON files hold every number Section 9 uses.
+r25 registers the shipped core with a 5-bit trim (`eq5_l<L>`, trim length L in
+hundredths of a µm) and the r24c equalizer in process. `r25_trim5.py screen`
+measures the end-point range at TT, SF and FF for L 0.5-2 µm (`screen.jsonl`),
+`dnl <L>` the 63-code transfer at five conditions (`dnl_*.json`), `range <L>`
+the 45 r22 conditions (`range_*.json`) and `mc <L> <corner> <V> <T>` the paired
+40-seed Monte Carlo (`mc_*.jsonl`; the core and the 4b trim devices keep their
+r22/r3 draw, the fifth bit draws from seed + 100000). `r25_cost.py` gives the TT
+energy and memory (`memory_*.json`) and `r25_report.py` the paired comparison
+(`r25_report.json`). Each MC run takes about 10 minutes with 12 workers.
 None of these studies is silicon, Linux, Colab or external-human evidence.

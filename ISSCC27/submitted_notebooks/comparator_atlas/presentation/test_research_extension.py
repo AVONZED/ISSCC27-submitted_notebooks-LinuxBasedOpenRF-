@@ -329,6 +329,24 @@ def test_equalize_fix_is_requalified(data):
     assert mc.attrs["below_25"] == (4, 0)
 
 
+def test_five_bit_trim_covers_the_hot_corner_seeds(data):
+    screen = ext.trim_length_table(data)
+    lsb_sf = {L: float(v.split(" / ")[1]) for L, v in screen["end-point LSB TT / SF / FF (mV)"].items()}
+    assert all(lsb_sf[L] < 0 for L in (0.5, 0.75, 1.0)) and all(lsb_sf[L] > 0 for L in (1.5, 1.75, 2.0))
+    assert abs(lsb_sf[1.25]) < 0.1
+    mc = ext.trim5_mc_table(data)
+    five = mc.xs(ext.TRIM5_LABEL, level="variant")
+    assert list(five["trim range covers offset"]) == ["40/40"] * 3
+    assert list(five["+/-3 mV @ 1 ns"]) == ["80/80"] * 3
+    assert list(five["+/-1 mV @ 1 ns"]) == ["68/80 (12 wrong)", "71/80 (9 wrong)", "70/80 (10 wrong)"]
+    assert list(five["seeds 3 / 13: m (mV)"]) == ["-0.12 / +0.12", "+0.82 / -0.82", "-0.59 / -0.82"]
+    assert list(mc.xs("4b as built (r22)", level="variant")["trim range covers offset"]) == ["38/40"] * 2
+    assert round(mc.attrs["narrowest"], 1) == 43.9 and round(mc.attrs["median"], 1) == 67.1
+    assert [round(e) for e in mc.attrs["energy_fj"]] == [296, 460]
+    assert [round(a, 2) for a in mc.attrs["area_um2"]] == [20.55, 38.79]
+    assert round(mc.attrs["memory_uv"]["equalize"], 1) == -1.0
+
+
 def test_no_unfilled_placeholders():
     texts = [(ROOT / n).read_text(encoding="utf-8") for n in
              ("Comparator_Atlas.ipynb", "README.md", "REVIEWER_GUIDE.md", "REPRODUCIBILITY.md")]

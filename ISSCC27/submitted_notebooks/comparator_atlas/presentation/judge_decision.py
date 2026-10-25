@@ -58,7 +58,9 @@ EXTENSION_SUMMARY = (
     "noise runs realization by realization, maps the noise over 45 PVT conditions (0.35–1.21 mV) and "
     "shows that it follows the input pair's inversion level, so the input common mode is a noise knob. "
     "A causal probe (r24c) traces a 7.5 µV decision memory to the trim's floating nodes; one "
-    "equalizing switch per bit removes it at 3% energy but does not recover the two hot-corner seeds.")
+    "equalizing switch per bit removes it at 3% energy but does not recover the two hot-corner seeds; "
+    "a fifth trim bit with the equalizer (r25) covers all 40 seeds at both hot corners, at 55% more "
+    "energy, with ±1 mV about unchanged (68 and 71/80), because that is limited by the ~2 mV trim step.")
 
 
 def sha(path):
