@@ -6,14 +6,23 @@ SiliconForge is a parameterized systolic AI accelerator IP-core design developed
 
 ## Project overview
 
-This design organizes multiply-accumulate operations into a regular two-dimensional array, allowing operands to propagate between neighboring processing elements while partial sums remain local. The notebook documents the architecture, design goals, pin assignment, RTL organization, simulation context, and functional-check summaries for the team’s submission.
+The design organizes multiply-accumulate operations into a regular two-dimensional array: operands move between neighboring processing elements while partial sums stay local. The notebook covers:
 
-The implementation is intended as an open-source reference design for digital accelerator exploration and can be used to understand:
+- Architecture, pin assignment and packet interface,
+- RTL organization of the MAC, processing element, counters, feeders, ready-valid block, datapaths and chip wrapper,
+- MAC accuracy analysis of the approximate multiplier,
+- Functional simulation results with a reproducible module-check package,
+- Physical design in GF180MCU.
 
-- dataflow-oriented accelerator organization,
-- PE-level arithmetic and accumulation,
-- input/output packetization,
-- functional simulation and design review documentation.
+## Results at a glance
+
+| Item | Result |
+|---|---|
+| Functional module checks | All listed checks pass (MAC, counter, PE, ready-valid, feeder, serializer, output datapath) |
+| Physical design | 1.675 mm × 1.675 mm block, LibreLane flow plus a small ECO |
+| Timing | 0 setup and 0 hold violations in all 9 corners at a 45 ns clock (22.2 MHz) |
+| Sign-off | DRC, LVS and antenna clean |
+| Gate-level check | Final netlist matches RTL bit for bit in 33/33 matrix cases |
 
 ## Team members
 
@@ -34,53 +43,45 @@ University of Virginia, USA
 Muhammad Waleed Akram  
 Email: waleedakram059@gmail.com
 
-or Alternatively:
+or alternatively:
 
 rumalisiddiqua@gmail.com
-
 
 ## Notebook
 
 Notebook file: `SiliconForge_Code_a_Chip.ipynb`
 
-The notebook contains the main design narrative, architecture summary, pin assignment, block-level organization, and simulation/verification figures used for review.
+All figures, tables and results are saved in the notebook, so it can be read without running anything. Figure cells store their picture inside the cell; running one redraws the same picture.
 
-## Dependencies
+## How to run the notebook
 
-To view and run the notebook locally, install the following:
+The notebook runs top to bottom in Google Colab (use the badge at the top of the notebook) or locally.
 
-- Python 3.10+
-- Jupyter Notebook or JupyterLab
-- IPython / ipykernel
-- NumPy
-- Matplotlib
-- Pandas
-
-Typical installation:
+Local setup:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install jupyterlab notebook numpy matplotlib pandas ipykernel
+pip install jupyterlab ipykernel numpy matplotlib pandas
+jupyter lab ISSCC27/submitted_notebooks/SiliconForge/SiliconForge_Code_a_Chip.ipynb
 ```
 
-## How to view the notebook
+Requirements:
 
-From the repository root:
+- Python 3.10 or newer (Colab's default works)
+- Jupyter with the packages above
+- `git` and internet access for Section 16, which downloads the pinned layout files from branch `a34-rtl-fix-pd` and installs its own pinned analysis packages
+- Optional: Icarus Verilog 12 (`sudo apt-get install iverilog`) to rerun the Section 15 module checks. Without it, that cell reports that the simulations were skipped and the saved results remain.
 
-```bash
-jupyter notebook ISSCC27/submitted_notebooks/SiliconForge/SiliconForge_Code_a_Chip.ipynb
-```
+### What each part reproduces
 
-Alternatively, open the notebook directly in VS Code with the Jupyter extension enabled.
+- **Sections 1–14:** design description and saved results.
+- **Section 15:** reruns the module checks from an RTL snapshot embedded in the notebook (branch `a34-rtl-fix-pd`, commit `13bd466`). Save the notebook as `SiliconForge_Code_a_Chip.ipynb` in the working folder first, as described in the notebook.
+- **Section 16:** physical design analysis of the final layout at a pinned commit on branch `a34-rtl-fix-pd`; its first cell explains the setup.
 
-## How to reproduce the notebook
+## License
 
-1. Open the notebook in Jupyter or VS Code.
-2. Ensure the required Python packages are installed.
-3. Run the notebook cells in order from top to bottom.
-4. Review the architecture summary, pin assignment, and generated figures.
-5. If needed, modify the design parameters and rerun the relevant cells to explore the parameterized accelerator behavior.
+Apache-2.0. See `LICENSE`.
 
 ## Notes
 
