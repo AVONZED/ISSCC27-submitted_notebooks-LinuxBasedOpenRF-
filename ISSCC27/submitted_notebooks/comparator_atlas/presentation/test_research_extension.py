@@ -287,6 +287,48 @@ def test_off_trim_branches_carry_decision_memory(data):
            ("-2.64 / -22.5", "+6.49 / +39.4")
 
 
+def test_gain_law_closes_the_latch_noise(data):
+    t = ext.gain_law_table(data)
+    a = t.attrs
+    assert (round(a["a0"], 2), round(a["k"], 3)) == (3.13, 0.728)
+    assert (round(a["pvt"]["rms"], 4), round(a["pvt"]["max"], 4)) == (0.0057, 0.0185)
+    assert round(a["closed"]["rms"], 3) == 0.053 and round(a["input_only"]["rms"], 3) == 0.164
+    assert 3.11 < a["loco"][0] and a["loco"][1] < 3.15 and a["loco"][2] < 0.02
+    assert a["share"][0] < 0.021 and a["share"][1] == 13
+    assert list(t.index) == [0.6, 0.7, 0.9, 1.1]
+    assert list(t["error"]) == ["-1.0%", "+0.3%", "+0.2%", "-11.5%"]
+    assert list(t["A_int"]) == [16.2, 11.1, 5.5, 3.8]
+
+
+def test_memory_is_the_floating_node_charge(data):
+    t = ext.memory_probe_table(data)
+    a = {c: [float(v.split()[0]) for v in t[f"{c}: a (uV) / c"]]
+         for c in ("as built", "own value forced", "pair shorted", "opposite prior forced")}
+    assert a["as built"] == [1.0, 7.5, 43.0, 9.5]
+    assert all(abs(x - y) <= 2.0 for x, y in zip(a["as built"], a["own value forced"]))
+    assert all(abs(x) <= 1.5 for x in a["pair shorted"])
+    assert a["opposite prior forced"] == [-x for x in a["own value forced"]]
+
+
+def test_equalize_fix_is_requalified(data):
+    t = ext.memory_fix_table(data)
+    eq, orig = t.loc[ext.FIX_LABELS["equalize"]], t.loc[ext.FIX_LABELS["original"]]
+    assert eq["memory a (uV) / c"] == "1.0 / 0.00%" and orig["memory a (uV) / c"] == "7.5 / 0.95%"
+    assert list(t["monotonic"]) == [True, False, True, True]
+    assert list(t["range out of span"]) == [0, 2, 0, 0]
+    assert (eq["half range min / median (mV)"], orig["half range min / median (mV)"]) == ("27.5 / 40.7", "18.7 / 37.8")
+    assert (orig["energy code 0 / 15 (fJ)"], eq["energy code 0 / 15 (fJ)"]) == ("288 / 298", "296 / 307")
+    assert t.loc[ext.FIX_LABELS["precharge"], "energy code 0 / 15 (fJ)"] == "389 / 460"
+    assert eq["unit6_w6: a (uV) / LSB TT (mV) / energy (fJ)"] == "1.0 / -1.00 / 785"
+    mc = ext.fix_mc_table(data)
+    assert list(mc["trim range covers offset"]) == ["38/40"] * 4
+    assert list(mc["+/-1 mV @ 1 ns"]) == ["71/80 (9 wrong)", "65/80 (15 wrong)", "69/80 (11 wrong)", "62/80 (18 wrong)"]
+    assert list(mc["uncovered seeds (residual m, mV)"]) == \
+           ["3 (+16.5), 13 (+14.4)", "3 (+4.8), 13 (+2.7)", "3 (+16.1), 13 (+13.2)", "3 (+6.7), 13 (+3.9)"]
+    assert list(mc["nominal half range (mV)"]) == [18.5, 29.3, 19.0, 27.2]
+    assert mc.attrs["below_25"] == (4, 0)
+
+
 def test_no_unfilled_placeholders():
     texts = [(ROOT / n).read_text(encoding="utf-8") for n in
              ("Comparator_Atlas.ipynb", "README.md", "REVIEWER_GUIDE.md", "REPRODUCIBILITY.md")]

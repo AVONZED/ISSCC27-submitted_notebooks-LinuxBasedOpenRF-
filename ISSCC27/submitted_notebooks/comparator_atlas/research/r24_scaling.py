@@ -168,6 +168,62 @@ def report(design="lvt_balanced_4b"):
     return out / "r24_report.json"
 
 
+def _gain_rows(rows, a0, k=None):
+    """Gain-suppression law sigma^2 = sigma_in^2 * (1 + (A0/A_int)^2), A_int = (gm/Id) * VDD/2; sigma_in is the
+    exact ISF input-pair term, or k * the closed-form input law when k is given."""
+    out = []
+    for r in rows:
+        a_int = r["condition"][1] / 2 / (r["id_over_gm_mV"] * 1e-3)
+        s_in = r["sigma_in_mv"] if k is None else k * r["sigma_cf_in_mv"]
+        pred = s_in * np.sqrt(1 + (a0 / a_int) ** 2)
+        out.append({"condition": r["condition"], "a_int": a_int, "sigma_mv": r["sigma_mv"], "pred_mv": float(pred),
+                    "err": float(pred / r["sigma_mv"] - 1)})
+    return out
+
+
+def _a0(rows):
+    a = np.array([r["condition"][1] / 2 / (r["id_over_gm_mV"] * 1e-3) for r in rows])
+    excess = np.array([(r["sigma_mv"] / r["sigma_in_mv"]) ** 2 - 1 for r in rows])
+    return float(np.exp(np.mean(0.5 * np.log(excess) + np.log(a))))
+
+
+def _stats(e):
+    e = np.abs([r["err"] for r in e])
+    return {"rms": float(np.sqrt(np.mean(e ** 2))), "max": float(e.max())}
+
+
+def gainlaw(path=None):
+    """r24c: fit A0 on the 45 pinned PVT conditions (leave-one-corner-out too) and test it on the CM sweep.
+    Writes out/r24/gain_law.json."""
+    path = path or (R.HERE / "out" / "r24" / "r24_report.json")
+    rep = json.loads(path.read_text())
+    rows, cm = rep["scaling"], rep["cm_sweep"]
+    a0 = _a0(rows)
+    k = float(np.exp(np.mean(np.log([r["sigma_in_mv"] / r["sigma_cf_in_mv"] for r in rows]))))
+    share = []
+    for b in rep["validation"] + cm:
+        g = b["group_sigma_mv"]
+        share.append(abs(g["reset"] ** 2 / sum(v ** 2 for v in g.values()) - b["pre_edge_share"]))
+    loco = {}
+    for corner in sorted({r["condition"][0] for r in rows}):
+        train = [r for r in rows if r["condition"][0] != corner]
+        test = [r for r in rows if r["condition"][0] == corner]
+        a = _a0(train)
+        loco[corner] = {"a0": a, **_stats(_gain_rows(test, a))}
+    input_only = [{"err": k * r["sigma_cf_in_mv"] / r["sigma_mv"] - 1} for r in rows]
+    res = {"a0": a0, "k_input": k, "pvt_exact_in": _stats(_gain_rows(rows, a0)),
+           "pvt_closed_form": _stats(_gain_rows(rows, a0, k)), "pvt_input_only": _stats(input_only),
+           "leave_one_corner_out": loco,
+           "a_int_range_pvt": [min(r["a_int"] for r in _gain_rows(rows, a0)),
+                               max(r["a_int"] for r in _gain_rows(rows, a0))],
+           "cm_sweep": [{"cm_v": c["cm_v"], **e, "pred_closed_mv": f["pred_mv"], "err_closed": f["err"]}
+                        for c, e, f in zip(cm, _gain_rows(cm, a0), _gain_rows(cm, a0, k))],
+           "reset_vs_pre_edge_share_max_abs": max(share), "share_benches": len(share),
+           "rows": _gain_rows(rows, a0)}
+    (R.HERE / "out" / "r24" / "gain_law.json").write_text(json.dumps(res, indent=1))
+    return res
+
+
 if __name__ == "__main__":
     cmd = ARGS[0]
     if cmd == "op":
@@ -186,5 +242,8 @@ if __name__ == "__main__":
         print(json.dumps({**features(*cond), **R.timing(*cond, fast=True)}))
     elif cmd == "report":
         print(report())
+    elif cmd == "gainlaw":
+        r = gainlaw()
+        print(json.dumps({k: v for k, v in r.items() if k != "rows"}, indent=1))
     else:
         raise SystemExit(__doc__)

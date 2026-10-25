@@ -1223,8 +1223,7 @@ def main(support_digest: str | None = None) -> None:
         (0.640 against 0.702 mV at TT) is the sampling spread of 40
         realizations. Moving each series switch to the x side removes the
         memory in all four designs but reverses and rescales the trim step
-        (shipped LSB −2.64 → +6.49 mV), so that trim would need resizing and
-        requalification.
+        (shipped LSB −2.64 → +6.49 mV); a requalified fix follows below.
 
         On the pinned bench the selected design's σn spans 0.35 mV
         (FS 1.62 V −40 °C) to 1.21 mV (SF 1.95 V 125 °C) over the 45 PVT
@@ -1255,6 +1254,60 @@ def main(support_digest: str | None = None) -> None:
         display(ext.noise_law_table(extension))
         """),
         markdown("""
+        **Closing the three gaps: a gain law for the latch noise, a causal
+        memory probe and a requalified fix (r24c).** *Latch and reset noise.*
+        The input pair carries 55–93% of σn² over PVT; the rest is
+        latch and reset noise, suppressed by the gain the input pair gives
+        before the latch takes over, Aint = (gm/Id)·VDD/2, read from the same
+        noiseless trajectory. One fitted constant, σn² = σin²·[1 + (A0/Aint)²]
+        with A0 = 3.13, reproduces the exact σn at all 45 PVT conditions to
+        0.6% rms (1.9% max; 5.3% rms with the closed-form σin, against 16% for
+        the input pair alone), and refitting A0 with each corner held out
+        moves it by less than 1%. Applied unchanged to the common-mode sweep
+        (first table below) it holds within 1% up to VDD/2 and
+        under-predicts by 11.5% at 1.1 V, where Aint falls to 3.8. The
+        ISF's reset share equals its pre-edge share on all 13 benches (within
+        0.021): the reset noise is the reset-switch kT/C carried across the
+        edge and suppressed by the same Aint.
+
+        *Causal memory probe.* Deleting the off branches also deleted their
+        capacitance. Here every branch stays in place and only the state of
+        the floating nodes is set during the last reset, with ideal switches
+        (second table; a is the memory per decision, c the fraction of the
+        previous input carried over). Forcing each node to its own value
+        changes a by at most 2 µV; shorting each sp⟨k⟩ to its sn⟨k⟩ erases
+        both a and c in all four designs, to the 1–2 µV bisection floor; and
+        forcing the node voltages of the opposite prior flips both signs. The
+        memory is the differential charge on those nodes (a 1.1–2.0 mV
+        split), nothing else.
+
+        *The fix.* Shorting the pair is the fix: one minimum NMOS per bit,
+        gated by the inverted clock from one minimum inverter, equalizes
+        sp⟨k⟩ and sn⟨k⟩ in reset; no trim device moves. On the shipped trim
+        (third table) it removes the memory (7.5 → 1.0 µV, c 0.95% → 0), keeps
+        the 31-code trim monotonic at TT, SS and FS, raises the narrowest of
+        the 45 half ranges from 18.7 to 27.5 mV and costs 3% energy (+1% and
+        43 → 1.0 µV on `unit6_w6`). Precharging the nodes to VDD also works
+        and gives more range, at 36–60% more energy; the r24 switch swap
+        loses monotonicity at SS. In the paired r22 mismatch Monte Carlo at
+        the two hot corners (last table) the equalized trim shrinks every
+        untrimmed offset by about 10% and the two ~3σ seeds' residuals from
+        16.5/14.4 to 4.8/2.7 mV (SF), but still does not cover them. Its
+        hot-corner step is coarser (half range 18.5 → 29.3 mV over the same
+        15 codes), so the ±1 mV count at 1 ns falls from 71/80 to 65/80 at SF
+        and 69/80 to 62/80 at FF while ±3 mV stays at 78–79/80. The
+        equalizer is a memory fix that makes the trim strength more uniform
+        over PVT (narrowest/widest half range 0.32 → 0.49), not a ±1 mV fix;
+        covering those seeds at ±1 mV needs the wider range with a finer
+        step.
+        """),
+        code("""
+        display(ext.gain_law_table(extension))
+        display(ext.memory_probe_table(extension))
+        display(ext.memory_fix_table(extension))
+        display(ext.fix_mc_table(extension))
+        """),
+        markdown("""
         **Limits.** Only Vth mismatch is modelled, and |*m*| is found by
         bisection to 0.2 mV; 40 seeds per condition are not a yield estimate.
         The cost paragraph above refers to the r13 fix. The 6-bit designs have
@@ -1274,10 +1327,14 @@ def main(support_digest: str | None = None) -> None:
         combined with the Monte Carlo residuals under a Gaussian assumption
         that 40 realizations cannot check at 10⁻⁶. The r24 ISF shares the r23
         noise model and its linearity; its atlas, common-mode and closed-form
-        results use the pinned bench. The closed form covers the input pair
-        only and its constant is fitted; the common-mode sweep is one TT
-        condition and is not requalified for offset, trim or kickback, and
-        the swapped trim is checked only for memory and step.
+        results use the pinned bench. The gain law's A0 is fitted on the same
+        45 conditions it is scored on (held-out corners move it by <1%), and
+        the common-mode sweep is one TT condition, not requalified for
+        offset, trim or kickback. The memory probe uses ideal switches. The
+        equalizer and precharge devices are nominal schematic devices with
+        no layout, mismatch or noise of their own in the ISF; the 6-bit
+        designs get only a spot check at three conditions, and the paired
+        fix Monte Carlo covers the selected design at its two hot corners.
         """),
         markdown("""
         ## 10. Discussion and limitations
@@ -1293,7 +1350,9 @@ def main(support_digest: str | None = None) -> None:
         noise (σn ≈ 0.7 mV at TT) a 10⁻⁶ error rate needs about 4 mV. Its
         r24 impulse-sensitivity measurement reproduces those noise runs
         realization by realization and maps σn over 45 PVT conditions
-        (0.35–1.21 mV).
+        (0.35–1.21 mV); its r24c follow-up traces a 7.5 µV decision memory
+        to floating trim nodes and removes it with one equalizing switch per
+        bit at 3% energy, which does not, however, recover the two ~3σ seeds.
 
         Under the same local calibration policy, the selected circuit
         increases 1 ns correct decisions from 310/392 to 372/392 across

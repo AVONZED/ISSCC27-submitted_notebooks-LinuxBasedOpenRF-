@@ -56,7 +56,9 @@ EXTENSION_SUMMARY = (
     "noiseless counts rather than low error rates; a 10⁻⁶ error rate needs about 4 mV at TT and "
     "7 mV at SF 1.95 V 125 °C. A measured impulse sensitivity of the decision (r24) reproduces those "
     "noise runs realization by realization, maps the noise over 45 PVT conditions (0.35–1.21 mV) and "
-    "shows that it follows the input pair's inversion level, so the input common mode is a noise knob.")
+    "shows that it follows the input pair's inversion level, so the input common mode is a noise knob. "
+    "A causal probe (r24c) traces a 7.5 µV decision memory to the trim's floating nodes; one "
+    "equalizing switch per bit removes it at 3% energy but does not recover the two hot-corner seeds.")
 
 
 def sha(path):

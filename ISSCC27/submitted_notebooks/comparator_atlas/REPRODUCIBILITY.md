@@ -642,7 +642,7 @@ command line.
 | r21 | `r21_neutral_atlas.py` | The three sealed designs on all 49 conditions with width skew and with the exact current skew, every +/-1 mV, 1 ns point re-simulated at 0.625 ps |
 | r22 | `r22_range_mc.py` | Nominal trim range of the three sealed designs on the 45 r20 conditions, and paired mismatch MC (40 seeds, as r3) of the selected design at SF and FF 1.95 V 125 C and of `lvt_base_3b` at SF 1.95 V 125 C |
 | r23 | `r23_noise.py` | Transient thermal (white BSIM4) noise: input-referred noise of five designs at TT and of the selected design at SS 1.62 V -40 C and SF 1.95 V 125 C (40 paired realizations each), its split by device group, and the error rate it gives the r3/r16/r19/r22 MC residuals |
-| r24 | `r24_isf.py`, `r24_scaling.py` | Measured impulse sensitivity (ISF) of the decision: noise predicted from the noiseless trajectory and checked per realization against r23 MC (nine benches), the selected design's noise at the 45 PVT conditions, decision memory of off trim branches and a layout-free fix, and the closed-form integration-phase law with an input-common-mode prediction |
+| r24 | `r24_isf.py`, `r24_scaling.py`, `r24_probe.py`, `r24_fixmc.py` | Measured impulse sensitivity (ISF) of the decision: noise predicted from the noiseless trajectory and checked per realization against r23 MC (nine benches), the selected design's noise at the 45 PVT conditions, decision memory of off trim branches and a layout-free fix, the closed-form integration-phase law with an input-common-mode prediction, the gain-suppression law for latch and reset noise, a causal probe of the memory and the equalize fix requalified over PVT, energy and paired mismatch MC |
 
 **Re-running.** Live studies use the same project-local ngspice 47 and pinned
 SKY130 models as the full campaign (`node scripts/setup.mjs` on Windows;
@@ -719,9 +719,16 @@ into an internal node at time tau, the switching input bisected for each sign
 so earlier decisions leave charge on the off trim branches (decision memory);
 `R24_PRIOR_MV=-5` pins the two earlier cycles to a fixed input, and all r24
 atlas, common-mode (`R24_CM_V`) and closed-form results use that pinned bench,
-with its own r23 MC for the validation rows. The closed form covers the input
-pair only and is calibrated once on the atlas. The swapped trim (switch on the
-x side) is checked for memory and trim step only, not re-sized or re-qualified.
+with its own r23 MC for the validation rows. The input-pair closed form is
+calibrated once on the atlas; `r24_scaling.py gainlaw` adds the gain-suppression
+term with one constant A0 fitted on the same 45 conditions (`gain_law.json`).
+`r24_probe.py run` sets the floating trim nodes with ideal switches during the
+last reset (`memory_probe.json`); `r24_probe.py qualify`, `spot` and `energy`
+requalify the swap, precharge and equalize fixes (`memory_fix_*.json`,
+`memory_spot_*.json`, `memory_energy_*.json`), and `r24_fixmc.py run` / `range`
+rerun the r22 mismatch Monte Carlo at SF and FF 1.95 V 125 C and the r22 nominal
+range with the equalizer added (`fixmc_*.jsonl`, `fixrange_*.json`). The added
+devices are nominal (no mismatch, no noise in the ISF) and have no layout.
 The trajectories and per-condition ISF scans are not archived;
-`r24_report.json` holds every number Section 9 uses.
+`r24_report.json` and the r24c JSON files hold every number Section 9 uses.
 None of these studies is silicon, Linux, Colab or external-human evidence.

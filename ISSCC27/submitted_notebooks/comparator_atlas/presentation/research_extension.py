@@ -17,7 +17,7 @@ from entry_tools import artifact_path, digest, verify_files
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "results" / "research"
-MANIFEST_SHA256 = "4f627276f6108323ac84282b6601250625fc00aa8bbd258fd731ee5d352b668c"
+MANIFEST_SHA256 = "96772bff1205e37ea7881b0bc67c205c4feb84d27f4efb338ad801e3016d6afe"
 ATLAS_DESIGNS = ("baseline", "lvt_base_3b", "lvt_balanced_4b")
 PROSPECTIVE_DESIGNS = ("svt_fast_4b", "lvt_fine_3b", "lvt_fine_4b", "lvt_fast_4b", "lvt_fast_fine_4b", "lvt_wide_5b")
 FIX = "fix_x2_unit5b"
@@ -497,6 +497,110 @@ def memory_table(data: dict) -> pd.DataFrame:
                 row[f"trim LSB / MSB step, {v} (mV)"] = f"{s['Vtp0'] - s['code0']:+.2f} / {s[msb] - s['code0']:+.1f}"
         rows.append(row)
     return pd.DataFrame(rows).set_index("variant").fillna("-")
+
+
+def gain_law_table(data: dict) -> pd.DataFrame:
+    """r24c: total noise from the input-pair term and the integration-phase gain,
+    sigma_n^2 = sigma_in^2 (1 + (A0 / A_int)^2), A_int = (gm/Id) VDD/2; A0 fitted once on the 45 PVT conditions
+    and applied unchanged to the input-common-mode sweep."""
+    law = _json("r24/gain_law.json")
+    if len(law["rows"]) != 45 or len(law["leave_one_corner_out"]) != 5:
+        raise RuntimeError("r24c gain law: expected 45 conditions and 5 held-out corners")
+    rows = [{"input CM (V)": r["cm_v"], "A_int": round(r["a_int"], 1), "exact sigma_n (mV)": round(r["sigma_mv"], 3),
+             "law, exact sigma_in (mV)": round(r["pred_mv"], 3), "error": f"{r['err']:+.1%}",
+             "law, closed-form sigma_in (mV)": round(r["pred_closed_mv"], 3), "error, closed form": f"{r['err_closed']:+.0%}"}
+            for r in law["cm_sweep"]]
+    table = pd.DataFrame(rows).set_index("input CM (V)")
+    loco = [v["a0"] for v in law["leave_one_corner_out"].values()]
+    table.attrs.update(a0=law["a0"], k=law["k_input"], pvt=law["pvt_exact_in"], closed=law["pvt_closed_form"],
+                       input_only=law["pvt_input_only"], loco=(min(loco), max(loco),
+                       max(v["max"] for v in law["leave_one_corner_out"].values())),
+                       a_int=law["a_int_range_pvt"], share=(law["reset_vs_pre_edge_share_max_abs"], law["share_benches"]))
+    return table
+
+
+PROBE_MODES = (("base", "as built"), ("self", "own value forced"),
+               ("short", "pair shorted"), ("transplant", "opposite prior forced"))
+
+
+def memory_probe_table(data: dict) -> pd.DataFrame:
+    """r24c: causal probe. The floating trim nodes are left in place and only their state is set during the last
+    reset (ideal switches, 20.0-21.9 ns): thr = a sign(prior) + c prior, a in uV (TT 1.8 V 27 C)."""
+    probe = _json("r24/memory_probe.json")
+    rows = []
+    for design in ("baseline", "lvt_balanced_4b", "unit6_w6", "u6_w12_l05"):
+        fit = probe["fit"][design]
+        split = probe["node_split_mv"][design]
+        rows.append({"variant": ISF_LABELS[design],
+                     "node split, prior +5 vs -5 (mV)": f"{min(split.values()):+.2f} to {max(split.values()):+.2f}",
+                     **{f"{label}: a (uV) / c": f"{fit[m]['decision_uv']:.1f} / {fit[m]['input_carry']:.2%}"
+                        for m, label in PROBE_MODES}})
+    return pd.DataFrame(rows).set_index("variant")
+
+
+FIX_LABELS = {"original": "as built", "swap": "series switch on the x side",
+              "precharge": "precharge nodes to VDD (8 PMOS)", "equalize": "equalize sp<k>/sn<k> (4 NMOS + inverter)"}
+
+
+def memory_fix_table(data: dict) -> pd.DataFrame:
+    """r24c: memory fixes on the shipped 4b trim. Memory at TT, the full 31-code transfer at the r7 conditions,
+    the half range at the 45 PVT conditions (earlier cycles pinned at -5 mV), energy per comparison at TT
+    (VDD plus clock-edge charge), and the light 6-bit check."""
+    fix = _json("r24/memory_fix_lvt_balanced_4b.json")
+    spot = _json("r24/memory_spot_unit6_w6.json")
+    energy = _json("r24/memory_energy_lvt_balanced_4b.json")
+    energy6 = _json("r24/memory_energy_unit6_w6.json")
+    conds = ("tt 1.8 27", "ss 1.62 -40", "fs 1.62 -40")
+    rows = []
+    for v, label in FIX_LABELS.items():
+        s, m = fix["summary"][v], fix["memory"][v]
+        if len(s["half_range_mv"]) != 45:
+            raise RuntimeError(f"r24c {v}: expected 45 half ranges")
+        tr = [s["transfer"].get(c) for c in conds]
+        row = {"fix": label, "memory a (uV) / c": f"{m['decision_uv']:.1f} / {m['input_carry']:.2%}",
+               "LSB TT / SS / FS (mV)": " / ".join("-" if t is None else f"{t['lsb_mv']:+.2f}" for t in tr),
+               "max |DNL| TT / SS / FS (LSB)": " / ".join("-" if t is None else f"{t['dnl_max_lsb']:.2f}" for t in tr),
+               "monotonic": all(t is not None and t["monotonic"] for t in tr),
+               "half range min / median (mV)": "{:.1f} / {:.1f}".format(*s["half_range_min_median_max"][:2]),
+               "range out of span": s["edge_failures"]}
+        if f"{v} 0" in energy:
+            e = [energy[f"{v} {k}"]["vdd_fj"] + energy[f"{v} {k}"]["clk_fj"] for k in (0, 15)]
+            row["energy code 0 / 15 (fJ)"] = f"{e[0]:.0f} / {e[1]:.0f}"
+        if v in spot["memory"]:
+            e6 = energy6[f"{v} 0"]["vdd_fj"] + energy6[f"{v} 0"]["clk_fj"]
+            lsb6 = spot["summary"][v]["tt 1.8 27"]["lsb_mv"]
+            row["unit6_w6: a (uV) / LSB TT (mV) / energy (fJ)"] = \
+                f"{spot['memory'][v]['decision_uv']:.1f} / {lsb6:+.2f} / {e6:.0f}"
+        rows.append(row)
+    return pd.DataFrame(rows).set_index("fix").fillna("-")
+
+
+def fix_mc_table(data: dict) -> pd.DataFrame:
+    """r24c: the r22 mismatch Monte Carlo (same seeds and device draws) with the equalize fix added, and the
+    nominal half range of each variant at that condition (r22 bench, no mismatch)."""
+    fix_range = {tuple(r["cond"]): r["half_range_mv"] for r in _json("r24/fixrange_lvt_balanced_4b.json")}
+    r22_range = {tuple(r["cond"]): r["half_range_mv"] for r in _jsonl(data, "r22/range.jsonl")
+                 if r["design"] == "lvt_balanced_4b"}
+    if len(fix_range) != 45 or set(fix_range) != set(r22_range):
+        raise RuntimeError("r24c: expected the 45 r22 range conditions")
+    rows = []
+    for corner in ("sf", "ff"):
+        cond = f"{corner.upper()} 1.95 V 125 C"
+        for label, pattern, half in (
+                ("as built (r22)", f"r22/mc_{corner}1.95V125C_lvt_balanced_4b_*.jsonl", r22_range),
+                ("equalize fix", f"r24/fixmc_{corner}1.95V125C_lvt_balanced_4b.jsonl", fix_range)):
+            recs = _jsonl(data, pattern)
+            row = {"variant": label, "condition": cond, "nominal half range (mV)": round(half[(corner, 1.95, 125.0)], 1),
+                   **_mc_summary(recs, 40)}
+            row["|m| rms (mV)"] = round(math.sqrt(np.mean([r["m_mv"] ** 2 for r in recs if r["seed"] < 40 and r["covered"]])), 2)
+            row["uncovered seeds (residual m, mV)"] = ", ".join(
+                f"{r['seed']} ({r['m_mv']:+.1f})" for r in sorted(recs, key=lambda r: r["seed"])
+                if r["seed"] < 40 and not r["covered"]) or "-"
+            rows.append(row)
+    table = pd.DataFrame(rows).set_index(["condition", "variant"])
+    table.attrs.update(narrowest=(min(r22_range.values()), min(fix_range.values())),
+                       below_25=(sum(v < 25 for v in r22_range.values()), sum(v < 25 for v in fix_range.values())))
+    return table
 
 
 def energy_screen_table(data: dict) -> pd.DataFrame:
