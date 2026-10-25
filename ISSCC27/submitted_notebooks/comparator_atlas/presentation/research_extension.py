@@ -17,7 +17,7 @@ from entry_tools import artifact_path, digest, verify_files
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "results" / "research"
-MANIFEST_SHA256 = "8222ff36dcd0dd6b4257a27f7a4421bd416e75bb39124fd5da8f21a29534b6f4"
+MANIFEST_SHA256 = "4f627276f6108323ac84282b6601250625fc00aa8bbd258fd731ee5d352b668c"
 ATLAS_DESIGNS = ("baseline", "lvt_base_3b", "lvt_balanced_4b")
 PROSPECTIVE_DESIGNS = ("svt_fast_4b", "lvt_fine_3b", "lvt_fine_4b", "lvt_fast_4b", "lvt_fast_fine_4b", "lvt_wide_5b")
 FIX = "fix_x2_unit5b"
@@ -104,6 +104,22 @@ NOISE_VARIANTS = (
     ("r19: unit 6b trim at L 0.5, input W 12", "TT 1.8 V 27 C",
      "r23/run_u6_w12_l05_tt_1.8V_27C_dt2ps_pruned_s*.jsonl", "off trim branches quiet",
      "r19/mc_w12_tt1.8V27C_*.jsonl"),
+)
+ISF_LABELS = {"baseline": "Sealed baseline: no trim, input W 2",
+              "lvt_base_3b": "Sealed lvt_base_3b: binary 3b trim, input W 2",
+              "lvt_balanced_4b": "Shipped: binary 4b trim, input W 3", "unit6_w6": "6-bit: unit 6b trim, input W 6",
+              "u6_w12_l05": "r19: unit 6b trim at L 0.5, input W 12"}
+ISF_BENCHES = (
+    # bench, design, condition, archived r23 MC (None: the pinned-prior MC lives only in the r24 report)
+    ("original", "lvt_balanced_4b", ("tt", 1.8, 27.0), "r23/run_lvt_balanced_4b_tt_1.8V_27C_dt2ps_pruned_s*.jsonl"),
+    ("original", "lvt_balanced_4b", ("ss", 1.62, -40.0), "r23/run_lvt_balanced_4b_ss_1.62V_-40C_dt2ps_pruned_s*.jsonl"),
+    ("original", "lvt_balanced_4b", ("sf", 1.95, 125.0), "r23/run_lvt_balanced_4b_sf_1.95V_125C_dt2ps_pruned_s*.jsonl"),
+    ("original", "baseline", ("tt", 1.8, 27.0), "r23/run_baseline_tt_1.8V_27C_dt2ps_s*.jsonl"),
+    ("original", "lvt_base_3b", ("tt", 1.8, 27.0), "r23/run_lvt_base_3b_tt_1.8V_27C_dt2ps_s*.jsonl"),
+    ("original", "unit6_w6", ("tt", 1.8, 27.0), "r23/run_unit6_w6_tt_1.8V_27C_dt2ps_pruned_s*.jsonl"),
+    ("pinned", "lvt_balanced_4b", ("tt", 1.8, 27.0), None),
+    ("pinned", "unit6_w6", ("tt", 1.8, 27.0), None),
+    ("pinned, CM 0.6 V", "lvt_balanced_4b", ("tt", 1.8, 27.0), None),
 )
 
 
@@ -383,6 +399,104 @@ def noise_table(data: dict) -> pd.DataFrame:
                             f"{np.percentile(need, 50):.1f} / {np.percentile(need, 90):.1f}"})
         rows.append(row)
     return pd.DataFrame(rows).set_index(["variant", "condition"])
+
+
+def _condition(c) -> str:
+    return f"{c[0].upper()} {c[1]:g} V {c[2]:g} C"
+
+
+def _r24() -> dict:
+    report = _json("r24/r24_report.json")
+    benches = [(v["bench"], v["design"], tuple(v["condition"])) for v in report["validation"]]
+    if benches != [(b, d, tuple(c)) for b, d, c, _ in ISF_BENCHES]:
+        raise RuntimeError("r24 validation benches changed")
+    return report
+
+
+def isf_table(data: dict) -> pd.DataFrame:
+    """r24: noise from the measured impulse sensitivity (ISF) vs the r23 transient-noise Monte Carlo, realization
+    by realization (same noise sequences). Original-bench MC shifts are re-checked against the r23 archive."""
+    rows = []
+    for v, (bench, design, condition, r23_pattern) in zip(_r24()["validation"], ISF_BENCHES):
+        mc, isf = np.array(v["mc_mv"]), np.array(v["isf_mv"])
+        if v["realization"] != list(range(NOISE_REALIZATIONS)) or v["edge"]:
+            raise RuntimeError(f"r24 {bench} {design}: expected {NOISE_REALIZATIONS} interior realizations")
+        if r23_pattern:
+            archived = sorted(_jsonl(data, r23_pattern), key=lambda r: r["realization"])
+            if not np.allclose([r["noise_mv"] for r in archived], mc, rtol=0, atol=1e-9):
+                raise RuntimeError(f"r24 {design}: MC shifts differ from the r23 archive")
+        sigma = float(np.std(mc, ddof=1))
+        half = 1.96 / math.sqrt(2 * (len(mc) - 1))
+        slope = np.polyfit(isf, mc, 1)[0]
+        share = v["group_sigma_mv"]["input"] ** 2 / v["isf_sigma_mv"] ** 2
+        rows.append({"bench": bench, "variant": ISF_LABELS[design], "condition": _condition(condition),
+                     "ISF sigma_n (mV)": round(v["isf_sigma_mv"], 3),
+                     "MC sigma_n (mV, 95% CI)": f"{sigma:.3f} ({sigma * (1 - half):.2f}-{sigma * (1 + half):.2f})",
+                     "corr": round(float(np.corrcoef(isf, mc)[0, 1]), 4), "slope": round(float(slope), 3),
+                     "rms(MC - ISF) (uV)": round(float(np.sqrt(np.mean((mc - isf) ** 2))) * 1e3, 1),
+                     "input-pair share": f"{share:.0%}", "x_half (ps)": v["x_half_ps"]})
+    return pd.DataFrame(rows).set_index(["bench", "variant", "condition"])
+
+
+def isf_atlas_table(data: dict) -> pd.DataFrame:
+    """r24: sigma_n (mV) of the shipped 4b design at the 45 PVT conditions from the ISF (pinned bench), with the
+    input step that keeps decision errors below 1e-6 (4.753 sigma_n, noise only)."""
+    rows = _jsonl(data, "r24/atlas_pinned_lvt_balanced_4b.jsonl")
+    if len(rows) != 45 or len({tuple(r["condition"]) for r in rows}) != 45 or any(r["edge"] for r in rows):
+        raise RuntimeError("r24 atlas: expected 45 distinct interior PVT conditions")
+    frame = pd.DataFrame([{"corner": r["condition"][0].upper(),
+                           "VDD / T": f"{r['condition'][1]:g} V {r['condition'][2]:g} C",
+                           "sigma": r["sigma_mv"]} for r in rows])
+    table = frame.pivot(index="corner", columns="VDD / T", values="sigma").round(2)
+    order = sorted({tuple(r["condition"][1:]) for r in rows})
+    table = table[[f"{v:g} V {t:g} C" for v, t in order]]
+    worst = max(rows, key=lambda r: r["sigma_mv"])
+    table.attrs["worst"] = (_condition(worst["condition"]), worst["sigma_mv"], NOISE_Z_1E6 * worst["sigma_mv"])
+    return table
+
+
+def noise_law_table(data: dict) -> pd.DataFrame:
+    """r24b: integration-phase law sigma_in^2 = 4kT gamma (Id/gm) / Q_int, calibrated once on the PVT atlas and
+    used to predict the input-common-mode sweep before the exact ISF (and, at 0.6 V, a fresh MC) was run."""
+    report = _r24()
+    ratio = np.array([r["sigma_in_mv"] / r["sigma_cf_in_mv"] for r in report["scaling"]])
+    if len(ratio) != 45:
+        raise RuntimeError("r24 closed-form fit: expected 45 conditions")
+    k = float(ratio.mean())
+    rows = []
+    for r in report["cm_sweep"]:
+        pred = k * r["sigma_cf_in_mv"]
+        rows.append({"input CM (V)": r["cm_v"], "Id/gm (mV)": round(r["id_over_gm_mV"]),
+                     "gamma": round(r["gamma"], 2), "Q_int (fC)": round(r["q_int_fC"], 1),
+                     "t_int (ps)": round(r["t_int_ps"]),
+                     "predicted sigma_in (mV)": round(pred, 3), "exact sigma_in (mV)": round(r["sigma_in_mv"], 3),
+                     "error": f"{pred / r['sigma_in_mv'] - 1:+.0%}", "total sigma_n (mV)": round(r["sigma_mv"], 3),
+                     "input-pair share": f"{r['input_share']:.0%}", "dq100 (ps)": round(r["dq100_ps"]),
+                     "sigma_n^2 x dq100 (mV^2 ps)": round(r["sigma_mv"] ** 2 * r["dq100_ps"])})
+    table = pd.DataFrame(rows).set_index("input CM (V)")
+    table.attrs["calibration"] = (k, float(ratio.std()), float(ratio.min()), float(ratio.max()), len(ratio))
+    return table
+
+
+def memory_table(data: dict) -> pd.DataFrame:
+    """r24: decision memory. Threshold of the last cycle after two earlier decisions on a held prior input,
+    thr = a sign(prior) + c prior (TT 1.8 V 27 C): as built, with the off trim branches deleted, and with
+    the series switch moved to the x side (the swapped trim also changes the trim steps, last columns)."""
+    fits = {v: _json(f"r24/memory_tt_1.8V_27C{s}.json")["fit"] for v, s in
+            (("as built", ""), ("off trim branches deleted", "_strip"), ("switch on the x side", "_swap"))}
+    steps = _json("r24/trim_steps_swap.json")
+    rows = []
+    for design in ("baseline", "lvt_balanced_4b", "unit6_w6", "u6_w12_l05"):
+        row = {"variant": ISF_LABELS[design]}
+        for v, fit in fits.items():
+            row[f"{v}: a (uV) / c"] = f"{fit[design]['decision_uv']:.1f} / {fit[design]['input_carry']:.2%}"
+        if design in steps:
+            for v in ("original", "swap"):
+                s = steps[design][v]
+                msb = next(k for k in s if k not in ("code0", "Vtp0"))
+                row[f"trim LSB / MSB step, {v} (mV)"] = f"{s['Vtp0'] - s['code0']:+.2f} / {s[msb] - s['code0']:+.1f}"
+        rows.append(row)
+    return pd.DataFrame(rows).set_index("variant").fillna("-")
 
 
 def energy_screen_table(data: dict) -> pd.DataFrame:

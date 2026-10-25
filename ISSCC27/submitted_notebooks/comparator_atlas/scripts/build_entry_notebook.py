@@ -1197,7 +1197,64 @@ def main(support_digest: str | None = None) -> None:
         kept noiseless; with every device noisy the selected design gives
         0.70 mV (paired rms difference 0.05 mV), and the 6-bit designs move
         by at most 0.04 mV in 5 and 3 checked realizations.
+        """),
+        markdown("""
+        **Noise without a noise simulation: the impulse sensitivity of the
+        decision (r24).** r23 found the decision linear in the device noise,
+        so σn² = Σₖ ∫ gₖ(t)² Sₖ(t)/2 dt, where gₖ(t) is the shift of the
+        switching input per unit charge that device *k* injects at time *t*
+        and Sₖ is its r23 noise density along the noiseless trajectory. We
+        measure g directly in the r23 deck: a 2 ps, ±20 aC charge pulse into
+        each internal node at time τ, with the switching input bisected for
+        each sign. One condition takes 4–6 minutes against about 25 for a
+        40-realization noise run, and the same formula predicts every r23
+        realization from its own noise sequence (first table below:
+        correlation 0.988–0.9987 on the original bench). The worst match,
+        `unit6_w6` (slope 0.77), exposed a bench artifact: the bench clocks
+        three cycles with the input held, and the node between each
+        switched-off trim device and its open series switch floats, keeps
+        charge from the earlier decisions and returns it to the input
+        pair's drain node (x). This
+        decision memory is 7.5 µV in the selected design and 43 µV in
+        `unit6_w6`, and it vanishes when the off branches are deleted
+        (second table). With the two earlier cycles pinned to a fixed input,
+        the ISF reproduces every Monte Carlo realization to 6–8 µV rms, below
+        the Monte Carlo's own 11.7 µV bisection step, so the remaining σn gap
+        (0.640 against 0.702 mV at TT) is the sampling spread of 40
+        realizations. Moving each series switch to the x side removes the
+        memory in all four designs but reverses and rescales the trim step
+        (shipped LSB −2.64 → +6.49 mV), so that trim would need resizing and
+        requalification.
 
+        On the pinned bench the selected design's σn spans 0.35 mV
+        (FS 1.62 V −40 °C) to 1.21 mV (SF 1.95 V 125 °C) over the 45 PVT
+        conditions (third table); noise alone then needs 5.7 mV for a 10⁻⁶
+        error rate. The trend follows the classical integration-phase law
+        σin² = 4kTγ(Id/gm)/Qint for the input pair (cf. Nuzzo et al.,
+        TCAS-I 2008), with Qint = ∫Id dt from the clock edge until the x
+        nodes reach VDD/2: with gm, Id and γ read from the same trajectory,
+        the exact input-pair noise is 0.729 ± 0.037 times the closed form
+        over all 45 conditions. Qint stays within 5.9–8.6 fC, so the noise is
+        set by the inversion level Id/gm (and γ), not by speed: higher VDD
+        and temperature push the pair deeper into strong inversion. That
+        makes the input common mode a noise knob. We wrote the law's
+        predictions down (constant from the first 11 atlas conditions; the
+        final one moves them by 1%) before running the exact ISF at
+        0.6–1.1 V (last table): within 2% at 0.6 and 0.9 V, +12% at 0.7 V and
+        −17% at 1.1 V, where the latch and reset carry half the noise. At
+        0.6 V a new 40-realization Monte Carlo gives 0.364 mV against
+        0.344 mV from the ISF (7.0 µV rms per realization): lowering the
+        common mode from VDD/2 to 0.6 V halves σn at about 6× the decision
+        time, and σn² × decision time is lowest near 0.7 V (24% below
+        nominal).
+        """),
+        code("""
+        display(ext.isf_table(extension))
+        display(ext.memory_table(extension))
+        display(ext.isf_atlas_table(extension))
+        display(ext.noise_law_table(extension))
+        """),
+        markdown("""
         **Limits.** Only Vth mismatch is modelled, and |*m*| is found by
         bisection to 0.2 mV; 40 seeds per condition are not a yield estimate.
         The cost paragraph above refers to the r13 fix. The 6-bit designs have
@@ -1215,7 +1272,12 @@ def main(support_digest: str | None = None) -> None:
         measured at trim code 0 on nominal devices, so noise from switched-on
         trim branches at the calibrated code is not included, and it is
         combined with the Monte Carlo residuals under a Gaussian assumption
-        that 40 realizations cannot check at 10⁻⁶.
+        that 40 realizations cannot check at 10⁻⁶. The r24 ISF shares the r23
+        noise model and its linearity; its atlas, common-mode and closed-form
+        results use the pinned bench. The closed form covers the input pair
+        only and its constant is fitted; the common-mode sweep is one TT
+        condition and is not requalified for offset, trim or kickback, and
+        the swapped trim is checked only for memory and step.
         """),
         markdown("""
         ## 10. Discussion and limitations
@@ -1228,7 +1290,10 @@ def main(support_digest: str | None = None) -> None:
         the selected design's trim does not cover two ~3σ seeds at
         1.95 V 125 °C, which `lvt_base_3b` also misses. Its r23 noise runs
         show that the ±1 mV counts are noiseless: with transient thermal
-        noise (σn ≈ 0.7 mV at TT) a 10⁻⁶ error rate needs about 4 mV.
+        noise (σn ≈ 0.7 mV at TT) a 10⁻⁶ error rate needs about 4 mV. Its
+        r24 impulse-sensitivity measurement reproduces those noise runs
+        realization by realization and maps σn over 45 PVT conditions
+        (0.35–1.21 mV).
 
         Under the same local calibration policy, the selected circuit
         increases 1 ns correct decisions from 310/392 to 372/392 across

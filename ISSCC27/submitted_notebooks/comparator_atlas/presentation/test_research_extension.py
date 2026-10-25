@@ -246,6 +246,47 @@ def test_thermal_noise_sets_the_error_rate_of_the_residual(data):
     assert paired_t(f"unit6_w6_{tt}_pruned", f"u6_w12_l05_{tt}_pruned") == 9.6
 
 
+def test_impulse_sensitivity_predicts_every_noise_realization(data):
+    t = ext.isf_table(data)
+    assert list(t["ISF sigma_n (mV)"]) == [0.648, 0.378, 1.249, 0.476, 0.67, 0.603, 0.64, 0.444, 0.344]
+    assert [s.split()[0] for s in t["MC sigma_n (mV, 95% CI)"]] == \
+           ["0.708", "0.356", "1.325", "0.464", "0.717", "0.518", "0.702", "0.482", "0.364"]
+    assert list(t["rms(MC - ISF) (uV)"]) == [38.5, 25.7, 165.3, 35.6, 48.0, 168.5, 6.1, 7.6, 7.0]
+    assert list(t["slope"])[-4:] == [0.773, 1.002, 1.007, 0.994]
+    assert min(t["corr"].iloc[-3:]) >= 0.9998
+    original = ext._r24()["validation"][:6]
+    assert all(v["noise"] == ("all" if v["design"] in ("baseline", "lvt_base_3b") else "prune") for v in original)
+    atlas = ext.isf_atlas_table(data)
+    assert atlas.shape == (5, 9) and list(atlas.columns)[:3] == ["1.62 V -40 C", "1.62 V 27 C", "1.62 V 125 C"]
+    assert atlas.loc["TT", "1.8 V 27 C"] == 0.64 and atlas.loc["FS", "1.62 V -40 C"] == 0.35
+    worst, sigma, need = atlas.attrs["worst"]
+    assert (worst, round(sigma, 2), round(need, 1)) == ("SF 1.95 V 125 C", 1.21, 5.7)
+
+
+def test_closed_form_law_predicts_the_common_mode_sweep(data):
+    t = ext.noise_law_table(data)
+    k, sd, low, high, n = t.attrs["calibration"]
+    assert (round(k, 3), round(sd, 3), round(low, 3), round(high, 3), n) == (0.729, 0.037, 0.661, 0.813, 45)
+    assert list(t.index) == [0.6, 0.7, 0.9, 1.1]
+    assert list(t["error"]) == ["+2%", "+12%", "+1%", "-17%"]
+    assert list(t["total sigma_n (mV)"]) == [0.344, 0.401, 0.64, 1.159]
+    assert list(t["sigma_n^2 x dq100 (mV^2 ps)"]) == [380, 155, 205, 548]
+    q = [r["q_int_fC"] for r in ext._r24()["scaling"]] + list(t["Q_int (fC)"])
+    assert 5.8 < min(q) and max(q) < 8.6
+
+
+def test_off_trim_branches_carry_decision_memory(data):
+    t = ext.memory_table(data)
+    a = {k: float(v.split()[0]) for k, v in t["as built: a (uV) / c"].items()}
+    assert [a[ext.ISF_LABELS[d]] for d in ("baseline", "lvt_balanced_4b", "unit6_w6", "u6_w12_l05")] == \
+           [1.0, 7.5, 43.0, 9.5]
+    for column in ("off trim branches deleted: a (uV) / c", "switch on the x side: a (uV) / c"):
+        assert all(abs(float(v.split()[0])) <= 1.5 for v in t[column])
+    shipped = t.loc[ext.ISF_LABELS["lvt_balanced_4b"]]
+    assert (shipped["trim LSB / MSB step, original (mV)"], shipped["trim LSB / MSB step, swap (mV)"]) == \
+           ("-2.64 / -22.5", "+6.49 / +39.4")
+
+
 def test_no_unfilled_placeholders():
     texts = [(ROOT / n).read_text(encoding="utf-8") for n in
              ("Comparator_Atlas.ipynb", "README.md", "REVIEWER_GUIDE.md", "REPRODUCIBILITY.md")]

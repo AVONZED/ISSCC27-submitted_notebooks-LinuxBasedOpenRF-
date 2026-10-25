@@ -54,7 +54,9 @@ EXTENSION_SUMMARY = (
     "are also missed by `lvt_base_3b`. With transient thermal noise (r23; white BSIM4 noise, no "
     "flicker) the shipped design has 0.71 mV input-referred noise at TT, so its ±1 mV results are "
     "noiseless counts rather than low error rates; a 10⁻⁶ error rate needs about 4 mV at TT and "
-    "7 mV at SF 1.95 V 125 °C.")
+    "7 mV at SF 1.95 V 125 °C. A measured impulse sensitivity of the decision (r24) reproduces those "
+    "noise runs realization by realization, maps the noise over 45 PVT conditions (0.35–1.21 mV) and "
+    "shows that it follows the input pair's inversion level, so the input common mode is a noise knob.")
 
 
 def sha(path):

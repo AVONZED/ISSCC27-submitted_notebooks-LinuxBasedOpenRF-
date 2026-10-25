@@ -4,7 +4,9 @@
 
 The source defaults to research/out. Raw SPICE caches and the per-condition r2/r13/r21 phase files
 (about 37 MB, reproducible with r2_prospective.py, r13_fix_atlas.py and r21_neutral_atlas.py) are not archived;
-nor are the r23 per-device noise tables (research/cache/r23, rebuilt by r23_noise.py tables).
+nor are the r23 per-device noise tables (research/cache/r23, rebuilt by r23_noise.py tables), nor the r24
+trajectories and per-condition ISF scans (rebuilt by r24_isf.py traj / isf / atlas; r24_report.json keeps
+every number the Notebook uses).
 """
 import hashlib
 import json
@@ -47,6 +49,8 @@ STUDIES = {
     "r21": ["r21/r21_score.json", "r21/r21_score_refined.json", "r21/refined.json"],
     "r22": ["r22/range.jsonl", "r22/mc_*.jsonl", "r22/sigma_*.json", "r22/r22_report.json"],
     "r23": ["r23/run_*.jsonl", "r23/validate_*.json", "r23/b0_*.json", "r23/r23_report.json"],
+    "r24": ["r24/r24_report.json", "r24/atlas_pinned_*.jsonl", "r24/isf_*.jsonl", "r24/sym_*.jsonl",
+            "r24/memory_*.json", "r24/trim_steps_swap.json"],
 }
 
 
