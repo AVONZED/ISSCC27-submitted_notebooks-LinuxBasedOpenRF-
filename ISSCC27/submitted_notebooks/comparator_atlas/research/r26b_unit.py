@@ -8,7 +8,7 @@ the unit sigma / sqrt(m) (Pelgrom, same area).
   python -B r26b_unit.py mcheck                    # m=2^k vs explicit parallel copies (TT, nominal)
   python -B r26b_unit.py weights <bits> <k> [k ...]  # single-bit weights, width vs unit cell, 5 conditions
   python -B r26b_unit.py screen|dnl|range <bits> <k>   # as r26_scale, unit-cell designs u<bits>_k<100k>
-  python -B r26b_unit.py mc <bits> <k> [corner vdd temp]
+  python -B r26b_unit.py mc <bits> <k> [corner vdd temp [n_seeds]]   # seeds 0..n_seeds-1 (default 40), resumable
 """
 import json
 import math
@@ -216,6 +216,7 @@ if __name__ == "__main__":
     elif cmd == "range":
         run_range(int(ARGS[1]), float(ARGS[2]))
     elif cmd == "mc":
-        mc(int(ARGS[1]), float(ARGS[2]), (ARGS[3], float(ARGS[4]), float(ARGS[5])) if len(ARGS) > 5 else HOT[0])
+        mc(int(ARGS[1]), float(ARGS[2]), (ARGS[3], float(ARGS[4]), float(ARGS[5])) if len(ARGS) > 5 else HOT[0],
+           range(int(ARGS[6]) if len(ARGS) > 6 else 40))
     else:
         raise SystemExit(__doc__)

@@ -1376,6 +1376,43 @@ def main(support_digest: str | None = None) -> None:
         display(ext.unit_trim_table(extension))
         """),
         markdown("""
+        **200 seeds and a unit-cell equalizer (r26c).** r26b's 240/240
+        is 40 seeds at three conditions. At 200 seeds and five conditions
+        (adding SS and FS 1.62 V −40 °C), `u5_k150` keeps every TT and hot
+        seed, but at the cold corners 11 of 400 seeds leave |*m*| > 1 mV
+        and ±1 mV at 1 ns passes 978 of 1000 seeds overall (95% CI
+        0.967–0.986). The static misses sit at codes that switch three or
+        more bits: the r24c equalizer, one minimum device per bit, was not
+        converted to unit cells, so the larger bits settle less in reset,
+        by an amount that changes with PVT (carry DNL up to 1.5 LSB, not
+        monotonic at the hot corners). Most cold 1 ns failures are
+        unresolved, not wrong: a residual near the 1 mV band edge leaves
+        about 0.2 mV to regenerate, which the slow cold latch cannot do in
+        1 ns. Building the equalizer from 2^k unit devices as well
+        (`e5_k150`, clkb inverter m 4) makes the transfer monotonic with
+        DNL ≤ 0.27 LSB at all five conditions and raises the pooled ±1 mV
+        at 1 ns to 996 of 1000 (0.990–0.999), with no unresolved decision,
+        for 517 fJ (+7.3%) and 2.0 µm² more equalizer gates. The cost is
+        that the LSB now follows PVT (0.97 mV cold, 1.46 mV hot), so the
+        hot corners lose 3 of 400 seeds (|*m*| ≤ 1.06 mV) and the
+        45-condition half range spreads 1.66× instead of 1.41×. The clkb
+        inverter sets the trim gain (second table): a weak edge releases
+        the wide equalizer late, so it still shorts the trim nodes during
+        integration; m 4 is the cheapest size with every step below
+        1.8 mV.
+        """),
+        code("""
+        eq = ext.equalizer_mc_table(extension)
+        display(eq)
+        e = eq.attrs["energy_fj"]
+        a = eq.attrs["equalizer_area_um2"]
+        for d in ("u5_k150", "e5_k150"):
+            print(f"{d}: TT energy, code 0 {e[d]:.0f} fJ; "
+                  f"equalizer gates {a[d]:.2f} um^2")
+        print(f"core gate-area proxy {eq.attrs['core_area_um2']:.1f} um^2")
+        display(ext.inverter_sweep_table(extension))
+        """),
+        markdown("""
         **Limits.** Only Vth mismatch is modelled, and |*m*| is found by
         bisection to 0.2 mV; 40 seeds per condition are not a yield estimate.
         The cost paragraph above refers to the r13 fix. The 6-bit designs have
@@ -1407,7 +1444,11 @@ def main(support_digest: str | None = None) -> None:
         three conditions, its full transfer five, and its Monte Carlo the
         two hot corners and TT. The same holds for the r26 and r26b trims;
         the unit cells have no layout, so gradient or proximity mismatch
-        among the 2^k cells of a bit is not modelled.
+        among the 2^k cells of a bit is not modelled. In r26c the equalizer
+        and inverter devices are nominal, the inverter size was chosen after
+        its sweep on nominal transfers, the 1 ns runs use the code from a
+        0.2 mV bisection, and 200 seeds per condition bound a rate only to
+        about 2%.
         """),
         markdown("""
         ## 10. Discussion and limitations
@@ -1431,7 +1472,10 @@ def main(support_digest: str | None = None) -> None:
         about unchanged (68/80 and 71/80). Its r26b unit-cell trim, with
         the input pair widened 1.5×, makes the trim weights binary at all
         corners and reaches ±1 mV for 240/240 paired decisions at the hot
-        corners and TT, at 4.8% more energy than r25.
+        corners and TT, at 4.8% more energy than r25. At 200 seeds and
+        five conditions (r26c) that design passes ±1 mV at 1 ns for 978 of
+        1000 seeds, losing at the cold corners; building its equalizer from
+        unit cells as well raises this to 996 of 1000 for 7.3% more energy.
 
         Under the same local calibration policy, the selected circuit
         increases 1 ns correct decisions from 310/392 to 372/392 across

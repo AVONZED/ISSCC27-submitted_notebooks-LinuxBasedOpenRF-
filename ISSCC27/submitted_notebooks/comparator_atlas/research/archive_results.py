@@ -6,7 +6,8 @@ The source defaults to research/out. Raw SPICE caches and the per-condition r2/r
 (about 37 MB, reproducible with r2_prospective.py, r13_fix_atlas.py and r21_neutral_atlas.py) are not archived;
 nor are the r23 per-device noise tables (research/cache/r23, rebuilt by r23_noise.py tables), nor the r24
 trajectories and per-condition ISF scans (rebuilt by r24_isf.py traj / isf / atlas; r24_report.json keeps
-every number the Notebook uses).
+every number the Notebook uses), nor the raw 200-seed r26c MC files (about 7 MB; rebuilt by r26b_unit.py mc and
+r26c_eqscale.py mc, summarized per seed by r26c_stats.py).
 """
 import hashlib
 import json
@@ -56,9 +57,13 @@ STUDIES = {
             "r25/r25_report.json"],
     "r26": ["r26/screen.jsonl", "r26/dnl_*.json", "r26/range_*.json", "r26/mc_*.jsonl", "r26/memory_*.json",
             "r26/r26_report.json"],
-    "r26b": ["r26b/weights.jsonl", "r26b/screen.jsonl", "r26b/dnl_*.json", "r26b/range_*.json",
-             "r26b/mc_*.jsonl", "r26b/memory_*.json"],
+    "r26b": ["r26b/weights.jsonl", "r26b/screen.jsonl", "r26b/dnl_u5_*.json", "r26b/range_u5_*.json",
+             "r26b/mc_sf*_u5_*.jsonl", "r26b/mc_ff*_u5_*.jsonl", "r26b/mc_tt*_u5_*.jsonl", "r26b/memory_*u5_*.json"],
+    "r26c": ["r26c/seeds_*.jsonl", "r26c/stats_*.json", "r26c/inv_sweep.json", "r26b/dnl_e5_*.json",
+             "r26b/range_e5_*.json", "r26b/memory_*e5_*.json", "r26b/fine_transfer*.json"],
 }
+# r26c extends the r26b MC files to 200 seeds; r26b keeps its 40 (r26c archives a per-seed summary instead).
+SEED_LIMIT = {"r26b": 40}
 
 
 def sha256(path: Path) -> str:
@@ -77,7 +82,11 @@ def main(source: Path) -> None:
             for path in matches:
                 target = DEST / study / path.name
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
+                body = path.read_bytes().replace(b"\r\n", b"\n")
+                if study in SEED_LIMIT and path.name.startswith("mc_"):
+                    body = b"".join(ln for ln in body.splitlines(keepends=True)
+                                    if json.loads(ln)["seed"] < SEED_LIMIT[study])
+                target.write_bytes(body)
                 files[f"{study}/{path.name}"] = sha256(target)
     manifest = {
         "schema": "comparator-atlas-research-archive-v1",

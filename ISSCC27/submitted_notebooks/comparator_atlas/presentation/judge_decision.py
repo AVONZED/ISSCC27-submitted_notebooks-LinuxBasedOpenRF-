@@ -64,7 +64,9 @@ EXTENSION_SUMMARY = (
     "The width-binary trim's bit weights also change with PVT (narrow-width LSB device); building each "
     "bit from identical unit cells at the same area makes them binary at every corner, and with the "
     "input pair widened 1.5× (r26b) ±1 mV reaches 240/240 paired decisions at SF, FF and TT for 4.8% "
-    "more energy than r25.")
+    "more energy than r25. At 200 seeds over five conditions (r26c) it passes ±1 mV at 1 ns for 978/1000 "
+    "seeds, losing at the cold corners to the per-bit equalizer it kept from r24c; building that "
+    "equalizer from unit cells too gives 996/1000, no unresolved decision, for 7.3% more energy.")
 
 
 def sha(path):

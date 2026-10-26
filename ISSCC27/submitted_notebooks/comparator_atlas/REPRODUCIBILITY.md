@@ -610,7 +610,7 @@ not part of the sealed decision record of Sections 1-8; nothing in the
 specification map, the 49-condition data or the layout example is changed.
 
 **Saved results.** `results/research/` holds the archived outputs of studies
-r1-r26b (JSON, JSONL and CSV, LF line endings).
+r1-r26c (JSON, JSONL and CSV, LF line endings).
 `results/research/manifest.json` lists the SHA256 of every archived file and
 of every `research/*.py` script. `presentation/research_extension.py` pins the
 manifest's own SHA256 and refuses to draw Section 9 if the manifest, any
@@ -646,6 +646,7 @@ command line.
 | r25 | `r25_trim5.py`, `r25_cost.py`, `r25_report.py` | 5-bit trim with the equalizer on the shipped core: trim-length screen (gm/capacitance polarity reversal at the hot corners for L >= 1.25 um), 63-code transfer, 45-condition range, paired mismatch MC at SF/FF 1.95 V 125 C and TT, energy and memory |
 | r26 | `r26_scale.py`, `r26_cost.py`, `r26_report.py` | The r25 trim with the input pair and tail widened by k (finer step): end-point screen, full transfer, 45-condition range, paired MC at SF/FF 1.95 V 125 C and TT, energy and memory for 5 bits at k 1.25 and 6 bits at k 1.5 |
 | r26b | `r26b_unit.py`, `r26b_cost.py` | Single-bit weights of the width-binary trim over PVT, and the same trim built from unit cells (instance `m` = 2^k, same area): screen, transfer, range, paired MC and cost at k 1.25 and 1.5 |
+| r26c | `r26c_stats.py`, `r26c_refine.py`, `r26c_fine.py`, `r26c_eqscale.py`, `r26c_cost.py` | 200-seed paired MC of `u5_k150` at five conditions with 0.01 mV re-bisection of borderline seeds, the 0.01 mV nominal transfer (carry DNL), the equalizer built from 2^k unit devices (`e5_k150`): transfer, range, 200-seed MC, clkb inverter sweep, energy and memory |
 
 **Re-running.** Live studies use the same project-local ngspice 47 and pinned
 SKY130 models as the full campaign (`node scripts/setup.mjs` on Windows;
@@ -754,4 +755,18 @@ explicit parallel copies, `weights <bits> <k>` writes the single-bit weights
 of both layouts at five conditions (`weights.jsonl`), and `screen`, `dnl`,
 `range` and `mc` follow r26 (bit k draws the unit sigma / sqrt(2^k)).
 `r26b_cost.py <bits> <k>` gives the TT energy and memory.
+r26c reruns `r26b_unit.py mc 5 1.5 <corner> <V> <T> 200` at the five DNL
+conditions (TT 1.8 V 27 C, SS/FS 1.62 V -40 C, SF/FF 1.95 V 125 C; seeds 0-39
+at SF/FF/TT are the r26b seeds). `r26c_refine.py 5 1.5 <corner> <V> <T> 200 [e]`
+re-bisects every seed with 0.85 <= |m| <= 1.15 mV to 0.01 mV at each candidate
+code, `r26c_fine.py` gives the 0.01 mV nominal steps, and `r26c_eqscale.py`
+registers `e<bits>_k<100k>` (equalizer of bit k = 2^k unit devices, clkb
+inverter `m` 4) with `dnl|range|mc|fine` commands (optional inverter `m` last;
+`fine` and `r26c_cost.py <bits> <k> [m]` for the inverter sweep; the cost
+energy file carries no inverter tag, so the m 1, 2 and 8 outputs are archived
+renamed `_i<m>`). The raw
+200-seed MC files (about 7 MB) are not archived; `r26c_stats.py <design> 200`
+reduces them to one record per seed (`seeds_*.jsonl`, `stats_*.json`) and
+`r26c_stats.py sweep` writes `inv_sweep.json`. Each 200-seed condition takes
+about 30 minutes with 12 workers.
 None of these studies is silicon, Linux, Colab or external-human evidence.

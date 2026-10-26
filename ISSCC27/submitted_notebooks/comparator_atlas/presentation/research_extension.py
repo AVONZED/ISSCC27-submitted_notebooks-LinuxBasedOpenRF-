@@ -17,7 +17,7 @@ from entry_tools import artifact_path, digest, verify_files
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "results" / "research"
-MANIFEST_SHA256 = "70ed0c2be03d316775732619121d6b47d3db4c2846cbdafdae371b360bc4044a"
+MANIFEST_SHA256 = "35583e16d77f16da1b4b6fb2ed31d87055df11ea87e09e37ce146bf02dc6b61e"
 ATLAS_DESIGNS = ("baseline", "lvt_base_3b", "lvt_balanced_4b")
 PROSPECTIVE_DESIGNS = ("svt_fast_4b", "lvt_fine_3b", "lvt_fine_4b", "lvt_fast_4b", "lvt_fast_fine_4b", "lvt_wide_5b")
 FIX = "fix_x2_unit5b"
@@ -756,6 +756,91 @@ def unit_trim_table(data: dict) -> pd.DataFrame:
             "TT energy, code 0 (fJ)": round(e["vdd_fj"] + e["clk_fj"]),
             "gate area (um^2)": round(_scaled_area_um2(bits, k), 1)})
     return pd.DataFrame(rows).set_index("design")
+
+
+# r26c: u5_k150 (r26b, one minimum equalizer per bit) vs e5_k150 (2^k unit equalizers per bit, clkb inverter m 4)
+EQ_DESIGNS = (("u5_k150", "r26b/dnl_u5_k150.json", "minimum equalizer per bit", 5, 1),
+              ("e5_k150", "r26c/dnl_e5_k150.json", "unit-cell equalizer", 31, 4))
+EQ_SEEDS = 200
+EQ_DEVICE_UM2 = 0.42 * 0.15
+
+
+def _clopper_pearson(k: int, n: int, alpha: float = 0.05) -> tuple[float, float]:
+    def cdf(j, p):
+        return sum(math.comb(n, i) * p ** i * (1 - p) ** (n - i) for i in range(j + 1))
+
+    def solve(f, target):
+        lo, hi = 0.0, 1.0
+        for _ in range(80):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if f(mid) > target else (lo, mid)
+        return (lo + hi) / 2
+
+    lower = 0.0 if k == 0 else solve(lambda p: cdf(k - 1, p), 1 - alpha / 2)
+    upper = 1.0 if k == n else solve(lambda p: cdf(k, p), alpha / 2)
+    return lower, upper
+
+
+def equalizer_mc_table(data: dict) -> pd.DataFrame:
+    """r26c: 200 paired MC seeds at the five DNL conditions for the r26b unit-cell trim (u5_k150) and the same trim
+    with its equalizer also built from unit cells (e5_k150). Static: |m| <= 1 mV (borderline seeds re-bisected to
+    0.01 mV). At 1 ns: both +-1 mV inputs decided correctly. Exact 95% Clopper-Pearson intervals over seeds."""
+    rows = []
+    for design, dnl, label, eq_gates, inv_m in EQ_DESIGNS:
+        seeds = _jsonl(data, f"r26c/seeds_{design}.jsonl")
+        transfer = {r["cond"][0]: r for r in _json(dnl)}
+        for cond in (*BIT_WEIGHT_CONDS, None):
+            part = [r for r in seeds if cond is None or tuple(r["cond"]) == cond]
+            if cond is not None and sorted(r["seed"] for r in part) != list(range(EQ_SEEDS)):
+                raise RuntimeError(f"{design} {cond}: Monte Carlo seeds are incomplete or duplicated")
+            m = np.array([r.get("fine_m_mv", r["m_mv"]) for r in part])
+            static = int(np.sum(np.abs(m) <= 1.0))
+            ok1 = sum(r["out_1mv_1ns"] == ["correct", "correct"] for r in part)
+            ok3 = sum(r["out_3mv_1ns"] == ["correct", "correct"] for r in part)
+            dec = [o for r in part for o in r["out_1mv_1ns"]]
+            lo, hi = _clopper_pearson(ok1, len(part))
+            row = {"condition": "pooled" if cond is None else _condition(list(cond)), "design": design,
+                   "covered": f"{sum(r['covered'] for r in part)}/{len(part)}",
+                   "static |m| <= 1 mV": f"{static}/{len(part)}",
+                   "+/-1 mV @ 1 ns (seeds)": f"{ok1}/{len(part)}",
+                   "95% CI": f"{lo:.3f} - {hi:.3f}",
+                   "wrong / unresolved decisions": f"{dec.count('wrong')} / {dec.count('unresolved')}",
+                   "+/-3 mV @ 1 ns (seeds)": f"{ok3}/{len(part)}",
+                   "|m| rms / max (mV)": f"{np.sqrt(np.mean(m ** 2)):.2f} / {np.max(np.abs(m)):.2f}"}
+            if cond is None:
+                row["LSB / max step (mV), DNL (LSB)"] = "-"
+            else:
+                t = transfer[cond[0]]
+                row["LSB / max step (mV), DNL (LSB)"] = (f"{abs(t['lsb_mv']):.2f} / {t['max_abs_step_mv']:.2f}, "
+                                                         f"{t['dnl_max_lsb']:.2f}" + ("" if t["monotonic"] else " (non-mono)"))
+            rows.append(row)
+    table = pd.DataFrame(rows).set_index(["condition", "design"])
+    energy, area, half = {}, {}, {}
+    for design, _, _, eq_gates, inv_m in EQ_DESIGNS:
+        study = "r26b" if design.startswith("u") else "r26c"
+        e = _json(f"{study}/memory_energy_{design}.json")["equalize 0"]
+        energy[design] = e["vdd_fj"] + e["clk_fj"]
+        area[design] = (eq_gates + 2 * inv_m) * EQ_DEVICE_UM2
+        half[design] = [r["half_range_mv"] for r in _json(f"{study}/range_{design}.json")]
+    table.attrs.update(energy_fj=energy, equalizer_area_um2=area, core_area_um2=_scaled_area_um2(5, 1.5),
+                       half_range_mv={d: (min(h), float(np.median(h)), max(h)) for d, h in half.items()})
+    return table
+
+
+def inverter_sweep_table(data: dict) -> pd.DataFrame:
+    """r26c: the clkb inverter that drives the 31 unit equalizers sets the trim gain (e5_k150; nominal steps of codes
+    0-11 at 0.01 mV, TT energy at code 0)."""
+    rows = []
+    for r in _json("r26c/inv_sweep.json"):
+        row = {"clkb inverter m": r["inv_m"]}
+        for c, name in (("ss", "SS 1.62 V -40 C"), ("tt", "TT 1.8 V 27 C"), ("sf", "SF 1.95 V 125 C")):
+            row[f"{name} step min / mean / max (mV)"] = " / ".join(f"{x:.2f}" for x in r[f"{c}_step_min_mean_max_mv"])
+        row["SF / SS mean step"] = round(r["sf_step_min_mean_max_mv"][1] / r["ss_step_min_mean_max_mv"][1], 1)
+        row["TT energy, code 0 (fJ)"] = round(r["energy_fj_code0"])
+        rows.append(row)
+    if [r["clkb inverter m"] for r in rows] != [1, 2, 4, 8]:
+        raise RuntimeError("r26c inverter sweep rows changed")
+    return pd.DataFrame(rows).set_index("clkb inverter m")
 
 
 def energy_screen_table(data: dict) -> pd.DataFrame:

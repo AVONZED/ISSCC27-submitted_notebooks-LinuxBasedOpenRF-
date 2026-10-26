@@ -45,8 +45,8 @@ def test_current_surfaces_preserve_warning_disclosure_and_readable_units():
         assert "Copilot" in text
         for compressed in ("27guardedMOS", "1440NEW", "all1440raw", "by6.01852%"):
             assert compressed not in text
-    assert len(notebook["cells"]) == 42
-    assert sum(c["cell_type"] == "code" for c in notebook["cells"]) == 19
+    assert len(notebook["cells"]) == 44
+    assert sum(c["cell_type"] == "code" for c in notebook["cells"]) == 20
 
 
 def test_references_use_verified_complete_author_metadata():

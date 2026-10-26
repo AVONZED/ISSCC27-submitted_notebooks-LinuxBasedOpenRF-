@@ -364,6 +364,28 @@ def test_unit_cell_trim_is_binary_over_pvt_and_reaches_one_millivolt(data):
     assert t.loc[ext.UNIT_SELECTED, "45-condition half range min / median / max (mV)"] == "31.6 / 39.0 / 44.5"
 
 
+def test_r26c_equalizer_monte_carlo_and_inverter_sweep(data):
+    t = ext.equalizer_mc_table(data)
+    pooled = t.xs("pooled", level="condition")
+    assert list(pooled["static |m| <= 1 mV"]) == ["989/1000", "997/1000"]
+    assert list(pooled["+/-1 mV @ 1 ns (seeds)"]) == ["978/1000", "996/1000"]
+    assert list(pooled["95% CI"]) == ["0.967 - 0.986", "0.990 - 0.999"]
+    assert list(pooled["wrong / unresolved decisions"]) == ["7 / 15", "4 / 0"]
+    assert list(pooled["+/-3 mV @ 1 ns (seeds)"]) == ["1000/1000"] * 2
+    assert list(t.xs("e5_k150", level="design")["+/-1 mV @ 1 ns (seeds)"]) == \
+        ["200/200", "200/200", "199/200", "199/200", "198/200", "996/1000"]
+    assert t.loc[("SS 1.62 V -40 C", "u5_k150"), "+/-1 mV @ 1 ns (seeds)"] == "185/200"
+    assert t.loc[("SF 1.95 V 125 C", "u5_k150"), "LSB / max step (mV), DNL (LSB)"] == "1.18 / 1.76, 1.50 (non-mono)"
+    assert t.loc[("SS 1.62 V -40 C", "e5_k150"), "LSB / max step (mV), DNL (LSB)"] == "0.97 / 1.17, 0.24"
+    assert {d: round(e) for d, e in t.attrs["energy_fj"].items()} == {"u5_k150": 482, "e5_k150": 517}
+    assert {d: round(a, 2) for d, a in t.attrs["equalizer_area_um2"].items()} == {"u5_k150": 0.44, "e5_k150": 2.46}
+    assert [round(x, 1) for x in t.attrs["half_range_mv"]["e5_k150"]] == [30.0, 37.8, 49.8]
+    s = ext.inverter_sweep_table(data)
+    assert list(s["SF / SS mean step"]) == [3.5, 2.2, 1.7, 1.4]
+    assert list(s["TT energy, code 0 (fJ)"]) == [498, 504, 517, 541]
+    assert s.loc[4, "SS 1.62 V -40 C step min / mean / max (mV)"] == "0.86 / 0.95 / 1.00"
+
+
 def test_no_unfilled_placeholders():
     texts = [(ROOT / n).read_text(encoding="utf-8") for n in
              ("Comparator_Atlas.ipynb", "README.md", "REVIEWER_GUIDE.md", "REPRODUCIBILITY.md")]
