@@ -54,6 +54,10 @@ STUDIES = {
             "r24/fixrange_*.json"],
     "r25": ["r25/screen.jsonl", "r25/dnl_*.json", "r25/range_*.json", "r25/mc_*.jsonl", "r25/memory_*.json",
             "r25/r25_report.json"],
+    "r26": ["r26/screen.jsonl", "r26/dnl_*.json", "r26/range_*.json", "r26/mc_*.jsonl", "r26/memory_*.json",
+            "r26/r26_report.json"],
+    "r26b": ["r26b/weights.jsonl", "r26b/screen.jsonl", "r26b/dnl_*.json", "r26b/range_*.json",
+             "r26b/mc_*.jsonl", "r26b/memory_*.json"],
 }
 
 

@@ -60,7 +60,11 @@ EXTENSION_SUMMARY = (
     "A causal probe (r24c) traces a 7.5 µV decision memory to the trim's floating nodes; one "
     "equalizing switch per bit removes it at 3% energy but does not recover the two hot-corner seeds; "
     "a fifth trim bit with the equalizer (r25) covers all 40 seeds at both hot corners, at 55% more "
-    "energy, with ±1 mV about unchanged (68 and 71/80), because that is limited by the ~2 mV trim step.")
+    "energy, with ±1 mV about unchanged (68 and 71/80), because that is limited by the ~2 mV trim step. "
+    "The width-binary trim's bit weights also change with PVT (narrow-width LSB device); building each "
+    "bit from identical unit cells at the same area makes them binary at every corner, and with the "
+    "input pair widened 1.5× (r26b) ±1 mV reaches 240/240 paired decisions at SF, FF and TT for 4.8% "
+    "more energy than r25.")
 
 
 def sha(path):

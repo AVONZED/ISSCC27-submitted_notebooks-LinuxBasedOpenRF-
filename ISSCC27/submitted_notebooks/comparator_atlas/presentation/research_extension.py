@@ -17,7 +17,7 @@ from entry_tools import artifact_path, digest, verify_files
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "results" / "research"
-MANIFEST_SHA256 = "fca87c04084ba5bbe66504ab1890efe282130585ea3ee976452482bde053a08b"
+MANIFEST_SHA256 = "70ed0c2be03d316775732619121d6b47d3db4c2846cbdafdae371b360bc4044a"
 ATLAS_DESIGNS = ("baseline", "lvt_base_3b", "lvt_balanced_4b")
 PROSPECTIVE_DESIGNS = ("svt_fast_4b", "lvt_fine_3b", "lvt_fine_4b", "lvt_fast_4b", "lvt_fast_fine_4b", "lvt_wide_5b")
 FIX = "fix_x2_unit5b"
@@ -678,6 +678,84 @@ def trim5_mc_table(data: dict) -> pd.DataFrame:
                        memory_uv={v: m["decision_uv"] for v, m in mem.items()},
                        narrowest=min(r25_range.values()), median=float(np.median(list(r25_range.values()))))
     return table
+
+
+# r26 / r26b: (study, design, trim layout, bits, input-pair and tail scale k); r25 is the k 1 width-binary reference
+UNIT_DESIGNS = (("r25", TRIM5, "width-binary", 5, 1.0), ("r26", "s5_k125", "width-binary", 5, 1.25),
+                ("r26", "s6_k150", "width-binary", 6, 1.5), ("r26b", "u5_k125", "unit cell", 5, 1.25),
+                ("r26b", "u5_k150", "unit cell", 5, 1.5))
+UNIT_SELECTED = "u5_k150"
+BIT_WEIGHT_CONDS = (("tt", 1.8, 27.0), ("ss", 1.62, -40.0), ("fs", 1.62, -40.0), ("sf", 1.95, 125.0),
+                    ("ff", 1.95, 125.0))
+
+
+def _scaled_area_um2(bits: int, k: float) -> float:
+    """Gate-area proxy of the shipped core with the input pair and tail widened by k; the proxy counts the trim
+    as 2 * max_code unit cells, so a width-binary and a unit-cell trim of the same bits have the same area."""
+    from dataclasses import replace
+
+    from comparator_atlas.designs import DESIGNS
+    core = DESIGNS["lvt_balanced_4b"]
+    return replace(core, trim_bits=bits, input_w=core.input_w * k, tail_w=core.tail_w * k).gate_area_um2
+
+
+def bit_weight_table(data: dict) -> pd.DataFrame:
+    """r26b: single-bit weights |b(2^k) - b(0)| (nominal, bits 0-4) of the 5b k 1.25 trim built width-binary (bit k:
+    one trim device W 0.42 * 2^k and one switch W 2^k) or from unit cells (bit k: 2^k cells W 0.42 / W 1)."""
+    rows = {}
+    for r in _jsonl(data, "r26b/weights.jsonl"):
+        rows[(r["design"], tuple(r["cond"]))] = r
+    out = []
+    for cond in BIT_WEIGHT_CONDS:
+        row = {"condition": _condition(list(cond))}
+        for design, label in (("s5_k125", "width-binary"), ("u5_k125", "unit cell")):
+            r = rows[(design, cond)]
+            b = r["b_mv"]
+            w = [(abs(b[str(1 << i)] - b["0"]) + abs(b[str(-(1 << i))] - b["0"])) / 2 for i in range(5)]
+            row[f"{label}: bit 0-4 weights (mV)"] = " ".join(f"{x:.1f}" for x in w)
+            row[f"{label}: w4 / w0"] = round(w[4] / w[0], 1)
+            row[f"{label}: full range (mV)"] = round((b["-31"] - b["31"]) / 2, 1)
+        out.append(row)
+    table = pd.DataFrame(out).set_index("condition")
+    table.attrs["spread"] = {label: max(table[f"{label}: full range (mV)"]) / min(table[f"{label}: full range (mV)"])
+                             for label in ("width-binary", "unit cell")}
+    return table
+
+
+def unit_trim_table(data: dict) -> pd.DataFrame:
+    """r26/r26b: the equalized trim with the input pair and tail widened by k (width-binary, r26) and built from
+    unit cells (r26b), against r25. Nominal 63/127-code transfer, 45-condition half range, paired MC over SF and FF
+    1.95 V 125 C and TT (40 seeds each, 1 ns), TT energy per comparison (code 0, VDD plus clock edge), area."""
+    rows = []
+    for study, design, layout, bits, k in UNIT_DESIGNS:
+        transfer = {r["cond"][0]: r for r in _json(f"{study}/dnl_{design}.json")}
+        if set(transfer) != {"tt", "ss", "fs", "sf", "ff"}:
+            raise RuntimeError(f"{design}: expected the transfer at TT, SS, FS, SF and FF")
+        step = {c: abs(r.get("max_abs_step_mv", r.get("max_step_mv"))) for c, r in transfer.items()}
+        half = [r["half_range_mv"] for r in _json(f"{study}/range_{design}.json")]
+        if len(half) != 45:
+            raise RuntimeError(f"{design}: expected 45 range conditions")
+        recs = []
+        for tag in ("sf1.95V125C", "ff1.95V125C", "tt1.8V27C"):
+            part = [r for r in _jsonl(data, f"{study}/mc_{tag}_{design}.jsonl") if r["seed"] < 40]
+            _mc_summary(part, 40)
+            recs += part
+        ok = {band: sum(e["outcome"] == "correct" for r in recs for e in r["evals"]
+                        if abs(e["v_mv"]) == band and e["deadline_ns"] == 1.0) for band in (1, 3)}
+        e = _json(f"{study}/memory_energy_{design}.json")["equalize 0"]
+        rows.append({
+            "design": design, "trim": layout, "bits": bits, "input pair / tail scale": k,
+            "TT LSB / max step (mV)": f"{transfer['tt']['lsb_mv']:+.2f} / {step['tt']:.2f}",
+            "cold max step (mV)": round(max(step["ss"], step["fs"]), 1),
+            "hot max |DNL| (LSB)": round(max(transfer[c]["dnl_max_lsb"] for c in ("sf", "ff")), 1),
+            "45-condition half range min / median / max (mV)":
+                f"{min(half):.1f} / {np.median(half):.1f} / {max(half):.1f}",
+            "covered (of 120)": sum(r["covered"] for r in recs),
+            "+/-1 mV @ 1 ns (of 240)": ok[1], "+/-3 mV @ 1 ns (of 240)": ok[3],
+            "max |m| (mV)": round(max(abs(r["m_mv"]) for r in recs if r["covered"]), 2),
+            "TT energy, code 0 (fJ)": round(e["vdd_fj"] + e["clk_fj"]),
+            "gate area (um^2)": round(_scaled_area_um2(bits, k), 1)})
+    return pd.DataFrame(rows).set_index("design")
 
 
 def energy_screen_table(data: dict) -> pd.DataFrame:

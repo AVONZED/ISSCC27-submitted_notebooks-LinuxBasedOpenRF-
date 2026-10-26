@@ -610,7 +610,7 @@ not part of the sealed decision record of Sections 1-8; nothing in the
 specification map, the 49-condition data or the layout example is changed.
 
 **Saved results.** `results/research/` holds the archived outputs of studies
-r1-r25 (JSON, JSONL and CSV, LF line endings).
+r1-r26b (JSON, JSONL and CSV, LF line endings).
 `results/research/manifest.json` lists the SHA256 of every archived file and
 of every `research/*.py` script. `presentation/research_extension.py` pins the
 manifest's own SHA256 and refuses to draw Section 9 if the manifest, any
@@ -644,6 +644,8 @@ command line.
 | r23 | `r23_noise.py` | Transient thermal (white BSIM4) noise: input-referred noise of five designs at TT and of the selected design at SS 1.62 V -40 C and SF 1.95 V 125 C (40 paired realizations each), its split by device group, and the error rate it gives the r3/r16/r19/r22 MC residuals |
 | r24 | `r24_isf.py`, `r24_scaling.py`, `r24_probe.py`, `r24_fixmc.py` | Measured impulse sensitivity (ISF) of the decision: noise predicted from the noiseless trajectory and checked per realization against r23 MC (nine benches), the selected design's noise at the 45 PVT conditions, decision memory of off trim branches and a layout-free fix, the closed-form integration-phase law with an input-common-mode prediction, the gain-suppression law for latch and reset noise, a causal probe of the memory and the equalize fix requalified over PVT, energy and paired mismatch MC |
 | r25 | `r25_trim5.py`, `r25_cost.py`, `r25_report.py` | 5-bit trim with the equalizer on the shipped core: trim-length screen (gm/capacitance polarity reversal at the hot corners for L >= 1.25 um), 63-code transfer, 45-condition range, paired mismatch MC at SF/FF 1.95 V 125 C and TT, energy and memory |
+| r26 | `r26_scale.py`, `r26_cost.py`, `r26_report.py` | The r25 trim with the input pair and tail widened by k (finer step): end-point screen, full transfer, 45-condition range, paired MC at SF/FF 1.95 V 125 C and TT, energy and memory for 5 bits at k 1.25 and 6 bits at k 1.5 |
+| r26b | `r26b_unit.py`, `r26b_cost.py` | Single-bit weights of the width-binary trim over PVT, and the same trim built from unit cells (instance `m` = 2^k, same area): screen, transfer, range, paired MC and cost at k 1.25 and 1.5 |
 
 **Re-running.** Live studies use the same project-local ngspice 47 and pinned
 SKY130 models as the full campaign (`node scripts/setup.mjs` on Windows;
@@ -741,4 +743,15 @@ the 45 r22 conditions (`range_*.json`) and `mc <L> <corner> <V> <T>` the paired
 r22/r3 draw, the fifth bit draws from seed + 100000). `r25_cost.py` gives the TT
 energy and memory (`memory_*.json`) and `r25_report.py` the paired comparison
 (`r25_report.json`). Each MC run takes about 10 minutes with 12 workers.
+r26 registers `s<bits>_k<100k>` (input W 3k, tail W 7k, trim L 1, equalizer) in
+process; `r26_scale.py screen|dnl|range|mc <bits> <k>` writes the same files as
+r25 under `out/r26/` (wider devices draw the r22 z scaled by the r3 Pelgrom
+sigma, `r3/sigma_*.json`), `r26_cost.py` the TT energy and memory and
+`r26_report.py` the paired comparison (`r26_report.json`). r26b registers
+`u<bits>_k<100k>` with bit k built from 2^k unit cells (W 0.42 trim device,
+W 1 switch, instance multiplier `m`); `r26b_unit.py mcheck` checks `m` against
+explicit parallel copies, `weights <bits> <k>` writes the single-bit weights
+of both layouts at five conditions (`weights.jsonl`), and `screen`, `dnl`,
+`range` and `mc` follow r26 (bit k draws the unit sigma / sqrt(2^k)).
+`r26b_cost.py <bits> <k>` gives the TT energy and memory.
 None of these studies is silicon, Linux, Colab or external-human evidence.

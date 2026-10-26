@@ -347,6 +347,23 @@ def test_five_bit_trim_covers_the_hot_corner_seeds(data):
     assert round(mc.attrs["memory_uv"]["equalize"], 1) == -1.0
 
 
+def test_unit_cell_trim_is_binary_over_pvt_and_reaches_one_millivolt(data):
+    w = ext.bit_weight_table(data)
+    assert list(w["width-binary: w4 / w0"]) == [17.2, 29.5, 32.8, 6.8, 7.3]
+    assert list(w["unit cell: w4 / w0"]) == [14.5, 17.2, 18.6, 11.5, 12.2]
+    assert round(w.attrs["spread"]["width-binary"], 2) == 2.40 and round(w.attrs["spread"]["unit cell"], 2) == 1.08
+    t = ext.unit_trim_table(data)
+    assert list(t.index) == [ext.TRIM5, "s5_k125", "s6_k150", "u5_k125", ext.UNIT_SELECTED]
+    assert list(t["covered (of 120)"]) == [120] * 5 and list(t["+/-3 mV @ 1 ns (of 240)"]) == [240] * 5
+    assert list(t["+/-1 mV @ 1 ns (of 240)"]) == [209, 235, 238, 235, 240]
+    assert list(t["max |m| (mV)"]) == [1.52, 1.05, 1.29, 1.05, 0.82]
+    assert list(t["TT energy, code 0 (fJ)"]) == [460, 476, 818, 465, 482]
+    assert list(t["gate area (um^2)"]) == [38.8, 39.3, 76.2, 39.3, 39.8]
+    assert list(t["cold max step (mV)"]) == [14.4, 12.0, 10.3, 2.6, 2.1]
+    assert list(t["hot max |DNL| (LSB)"]) == [2.2, 3.0, 4.4, 1.4, 1.5]
+    assert t.loc[ext.UNIT_SELECTED, "45-condition half range min / median / max (mV)"] == "31.6 / 39.0 / 44.5"
+
+
 def test_no_unfilled_placeholders():
     texts = [(ROOT / n).read_text(encoding="utf-8") for n in
              ("Comparator_Atlas.ipynb", "README.md", "REVIEWER_GUIDE.md", "REPRODUCIBILITY.md")]

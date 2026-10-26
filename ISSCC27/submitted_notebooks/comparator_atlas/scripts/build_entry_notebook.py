@@ -1345,6 +1345,37 @@ def main(support_digest: str | None = None) -> None:
         print(f"gate-area proxy: 4b {a4:.2f} um^2, 5b {a5:.2f} um^2")
         """),
         markdown("""
+        **A finer step from unit cells (r26, r26b).** r25 is limited by
+        its step, not its range. *Wider input pair (r26).* Widening the
+        input pair and tail by k (same current density) shrinks the step,
+        since the step is set by the ratio of trim gm to input-pair gm.
+        At k 1.25, ±1 mV rises from 209 to 235 of 240 decisions (SF, FF,
+        TT) for +3.6% energy; six bits at k 1.5 reach 238 but cost 1.8×
+        the energy. The remaining misses are carries, and the hot range
+        collapses faster than 1/k. *Diagnosis (r26b, first table).* The
+        width-binary trim (bit k: one W 0.42·2^k device and switch) does
+        not have binary weights: w4/w0 is 30–33 at −40 °C and 7 at 125 °C,
+        so its full range moves 2.4× over the five conditions. The narrow
+        LSB device sits in another model bin, and its perimeter terms do
+        not scale with W, so each bit has its own Vth and capacitance.
+        *Unit cells.* Building bit k from 2^k identical cells (W 0.42
+        trim, W 1 switch; the same total W and gate area) keeps w4/w0 at
+        11.5–18.6 and the full range within 1.08× at all five conditions.
+        In the second table, the unit-cell trim cuts the cold max step
+        from 12 to 2.6 mV and the hot DNL from 3.0 to 1.4 LSB at the same
+        k, and the 45-condition half range spreads 1.4× instead of 2.5×.
+        At k 1.5 (`u5_k150`), every seed is covered and ±1 mV at 1 ns is
+        240/240 over SF, FF and TT (max |m| 0.82 mV), at 482 fJ and
+        39.8 µm²: +4.8% energy and +2.5% area over r25, against 818 fJ
+        and 76.2 µm² for six width-binary bits. The narrow-width cause
+        was seen at the cold corners in r7; new here are the hot corners,
+        the equalizer and the paired Monte Carlo.
+        """),
+        code("""
+        display(ext.bit_weight_table(extension))
+        display(ext.unit_trim_table(extension))
+        """),
+        markdown("""
         **Limits.** Only Vth mismatch is modelled, and |*m*| is found by
         bisection to 0.2 mV; 40 seeds per condition are not a yield estimate.
         The cost paragraph above refers to the r13 fix. The 6-bit designs have
@@ -1374,7 +1405,9 @@ def main(support_digest: str | None = None) -> None:
         fix Monte Carlo covers the selected design at its two hot corners.
         The r25 5-bit trim is likewise schematic only; its length screen is
         three conditions, its full transfer five, and its Monte Carlo the
-        two hot corners and TT.
+        two hot corners and TT. The same holds for the r26 and r26b trims;
+        the unit cells have no layout, so gradient or proximity mismatch
+        among the 2^k cells of a bit is not modelled.
         """),
         markdown("""
         ## 10. Discussion and limitations
@@ -1395,7 +1428,10 @@ def main(support_digest: str | None = None) -> None:
         bit at 3% energy, which does not, however, recover the two ~3σ seeds.
         Its r25 5-bit trim with the equalizer does cover them (all 40 seeds
         at both hot corners, ±3 mV 80/80) at 55% more energy, with ±1 mV
-        about unchanged (68/80 and 71/80).
+        about unchanged (68/80 and 71/80). Its r26b unit-cell trim, with
+        the input pair widened 1.5×, makes the trim weights binary at all
+        corners and reaches ±1 mV for 240/240 paired decisions at the hot
+        corners and TT, at 4.8% more energy than r25.
 
         Under the same local calibration policy, the selected circuit
         increases 1 ns correct decisions from 310/392 to 372/392 across
